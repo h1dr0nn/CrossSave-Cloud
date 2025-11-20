@@ -5,7 +5,7 @@ GOAL: Full Local Logic + GUI before Cloud Sync
 
 ========================================
 PHASE 1 — LOCAL CORE SYSTEM (LINUX)
-STATUS: IN PROGRESS
+STATUS: DONE
 ========================================
 
 1.1 Watcher Engine (DONE)
@@ -32,7 +32,7 @@ STATUS: IN PROGRESS
 - Delete version
 - Version metadata view
 
-1.5 Local Test UI (IN PROGRESS)
+1.5 Local Test UI (DONE)
 - Watcher panel
 - Packager panel
 - History panel
@@ -41,7 +41,7 @@ STATUS: IN PROGRESS
 
 ----------------------------------------
 PHASE 2 — LOCAL FULL UI/UX
-STATUS: PENDING
+STATUS: IN PROGRESS
 ----------------------------------------
 
 2.1 Main Application UI
