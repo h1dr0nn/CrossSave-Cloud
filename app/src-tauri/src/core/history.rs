@@ -42,9 +42,10 @@ pub struct HistoryManager {
 
 impl Default for HistoryManager {
     fn default() -> Self {
-        let app_dir = tauri::path::app_data_dir(&tauri::Config::default())
-            .unwrap_or_else(|| std::env::temp_dir());
-        let base_dir = app_dir.join("archives").join("history");
+        let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("data")
+            .join("archives")
+            .join("history");
 
         match Self::init(base_dir.clone()) {
             Ok(manager) => manager,

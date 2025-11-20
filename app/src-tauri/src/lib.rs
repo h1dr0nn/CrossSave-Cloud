@@ -11,7 +11,7 @@ use core::watcher::WatcherManager;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
-async fn greet(name: &str) -> String {
+fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
