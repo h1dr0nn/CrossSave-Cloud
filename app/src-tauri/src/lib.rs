@@ -1,6 +1,7 @@
 mod api;
 mod core;
 
+use api::packager_api::{package_save, validate_paths};
 use api::profile_api::{get_profile, list_profiles};
 use api::watcher_api::{start_watcher, stop_watcher};
 use core::profile;
@@ -26,7 +27,9 @@ pub fn run() {
             start_watcher,
             stop_watcher,
             list_profiles,
-            get_profile
+            get_profile,
+            package_save,
+            validate_paths
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
