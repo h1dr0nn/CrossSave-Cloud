@@ -1,7 +1,9 @@
 mod api;
 mod core;
 
+use api::profile_api::{get_profile, list_profiles};
 use api::watcher_api::{start_watcher, stop_watcher};
+use core::profile;
 use core::watcher::WatcherManager;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -12,10 +14,20 @@ fn greet(name: &str) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Err(err) = profile::load_profiles() {
+        tracing::error!("[PROFILE] Failed to load emulator profiles: {err}");
+    }
+
     tauri::Builder::default()
         .manage(WatcherManager::default())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, start_watcher, stop_watcher])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            start_watcher,
+            stop_watcher,
+            list_profiles,
+            get_profile
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

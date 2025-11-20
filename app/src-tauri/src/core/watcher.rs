@@ -1,6 +1,8 @@
 use std::{collections::HashMap, path::PathBuf, pin::Pin, sync::Mutex, time::Duration};
 
-use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher};
+use notify::{
+    Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher,
+};
 use serde::Serialize;
 use thiserror::Error;
 use tokio::select;
@@ -54,10 +56,16 @@ pub struct WatcherManager {
 impl WatcherManager {
     pub fn start(&self, app: AppHandle, paths: Vec<PathBuf>) -> Result<(), WatcherError> {
         if paths.is_empty() {
-            return Err(WatcherError::WatchPath("<empty>".into(), "no paths provided".into()));
+            return Err(WatcherError::WatchPath(
+                "<empty>".into(),
+                "no paths provided".into(),
+            ));
         }
 
-        let mut guard = self.inner.lock().map_err(|err| WatcherError::Lock(err.to_string()))?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|err| WatcherError::Lock(err.to_string()))?;
         if guard.is_some() {
             warn!("[WATCHER] Attempted to start watcher while already running");
             return Err(WatcherError::AlreadyRunning);
@@ -76,10 +84,16 @@ impl WatcherManager {
             .collect();
 
         if filtered_paths.is_empty() {
-            return Err(WatcherError::WatchPath("<empty>".into(), "no valid paths".into()));
+            return Err(WatcherError::WatchPath(
+                "<empty>".into(),
+                "no valid paths".into(),
+            ));
         }
 
-        info!("[WATCHER] Starting watcher for {} paths", filtered_paths.len());
+        info!(
+            "[WATCHER] Starting watcher for {} paths",
+            filtered_paths.len()
+        );
 
         let (event_tx, event_rx) = async_channel::unbounded::<NotifyResult<Event>>();
         let (stop_tx, stop_rx) = async_channel::bounded::<()>(1);
@@ -96,11 +110,18 @@ impl WatcherManager {
         for path in &filtered_paths {
             watcher
                 .watch(path, RecursiveMode::Recursive)
-                .map_err(|err| WatcherError::WatchPath(path.display().to_string(), err.to_string()))?;
+                .map_err(|err| {
+                    WatcherError::WatchPath(path.display().to_string(), err.to_string())
+                })?;
             debug!("[WATCHER] Watching path: {:?}", path);
         }
 
-        let handle = spawn_processor(app.clone(), stop_rx, event_rx, Duration::from_millis(DEFAULT_DEBOUNCE_MS));
+        let handle = spawn_processor(
+            app.clone(),
+            stop_rx,
+            event_rx,
+            Duration::from_millis(DEFAULT_DEBOUNCE_MS),
+        );
 
         *guard = Some(WatcherInstance {
             watcher,
@@ -112,7 +133,10 @@ impl WatcherManager {
     }
 
     pub async fn stop(&self) -> Result<(), WatcherError> {
-        let mut guard = self.inner.lock().map_err(|err| WatcherError::Lock(err.to_string()))?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|err| WatcherError::Lock(err.to_string()))?;
         let Some(instance) = guard.take() else {
             warn!("[WATCHER] Attempted to stop watcher but none running");
             return Err(WatcherError::NotRunning);
@@ -190,7 +214,10 @@ async fn flush_events(app: &AppHandle, pending: &mut HashMap<PathBuf, WatchEvent
         .collect();
 
     for event in events {
-        debug!("[WATCHER] Emitting {:?} for {:?}", event.event_type, event.path);
+        debug!(
+            "[WATCHER] Emitting {:?} for {:?}",
+            event.event_type, event.path
+        );
         if let Err(err) = app.emit(WATCHER_EVENT_NAME, &event) {
             error!("[WATCHER] Failed to emit event: {err}");
         }
@@ -225,4 +252,3 @@ pub fn watcher_event_name() -> &'static str {
 }
 
 pub type SharedWatcherManager = tauri::State<'_, WatcherManager>;
-
