@@ -1,0 +1,111 @@
+PROJECT: CrossSave Cloud
+VERSION: 0.1
+PLATFORM TARGET: Linux + Android
+STATUS: Core system initializing
+
+========================================
+ROADMAP OVERVIEW (4 PHASES)
+========================================
+
+[PHASE 1] CORE SYSTEM (LINUX-FIRST)
+STATUS: IN PROGRESS
+
+1.1 File Watcher (Linux)
+- Implement inotify watcher
+- Detect add/remove/modify
+- Debounce events
+- Log events into UI
+
+1.2 Emulator Profile System
+- Load profile JSON: {name, emulator_id, save_path, patterns}
+- Allow user override paths
+- Prepare default profiles: RetroArch, PPSSPP, Dolphin
+- Auto-detect if executable exists
+
+1.3 Save Packaging
+- Zip/Tar.gz compression
+- Metadata JSON: game_id, emulator_id, timestamp, hash, file list
+- Generate version_id
+
+1.4 Local History
+- Keep last 5–10 versions
+- Manual restore
+- Compare size/hash of versions
+
+----------------------------------------
+
+[PHASE 2] CLOUD SYNC SYSTEM
+STATUS: PENDING
+
+2.1 Cloud API (simple)
+- POST /upload
+- GET /latest
+- GET /versions
+- Use S3/Supabase storage
+
+2.2 Sync Logic
+- Latest-wins strategy
+- Detect conflicts: timestamp + hash + device_id
+
+2.3 Cloud Account Settings UI
+- Login flow
+- Device list
+- Auto-sync toggle
+- Manual Sync button
+- Version history display
+
+----------------------------------------
+
+[PHASE 3] ANDROID SUPPORT
+STATUS: PENDING
+
+3.1 Storage Permissions (SAF)
+- User selects emulator save folders
+- Save URI permission
+
+3.2 File Watcher (Android)
+- FileObserver integration
+- Rust <> Android binding
+
+3.3 Cloud Integration
+- Auto-upload on save change
+- Auto-download on app open
+- Manual sync for battery saving
+
+3.4 Background Behavior
+- Sync only when WiFi + Charging (optional)
+- Notification for conflicts
+
+----------------------------------------
+
+[PHASE 4] RELEASE + POLISH
+STATUS: PENDING
+
+4.1 UI/UX
+- Sidebar: Emulators
+- Game List
+- Save version viewer
+- Activity log
+- Settings page
+
+4.2 Advanced Features (optional)
+- LAN peer-to-peer sync
+- Community emulator profiles
+- Import/Export save manually
+- Steam Deck preset paths
+
+4.3 Release
+- Linux: AppImage, .deb, Flatpak
+- Android: APK + AAB
+- GitHub Actions CI/CD builds
+
+========================================
+CURRENT PROJECT POSITION
+========================================
+PHASE: PHASE 1 — CORE SYSTEM
+SUBTASK: Linux environment & Tauri project initialization completed.
+NEXT ACTION: Implement Linux File Watcher module.
+
+========================================
+END OF FILE
+========================================
