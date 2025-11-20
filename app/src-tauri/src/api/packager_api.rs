@@ -1,16 +1,25 @@
 use std::path::PathBuf;
 
+use serde::Serialize;
 use tracing::{error, info, warn};
 
+use crate::core::history::{HistoryEntry, HistoryManager};
 use crate::core::packager::{PackagedSave, SavePackager};
+
+#[derive(Debug, Serialize)]
+pub struct PackageResponse {
+    pub packaged: PackagedSave,
+    pub history: HistoryEntry,
+}
 
 #[tauri::command]
 pub async fn package_save(
+    state: tauri::State<'_, HistoryManager>,
     game_id: String,
     emulator_id: String,
     paths: Vec<String>,
     patterns: Vec<String>,
-) -> Result<PackagedSave, String> {
+) -> Result<PackageResponse, String> {
     let sanitized_paths: Vec<PathBuf> = paths
         .into_iter()
         .filter(|path| !path.trim().is_empty())
@@ -45,7 +54,22 @@ pub async fn package_save(
     .await
     .map_err(|err| err.to_string())?;
 
-    join_result
+    let packaged = join_result?;
+
+    let history_entry = state
+        .save_to_history(
+            packaged.metadata.clone(),
+            PathBuf::from(&packaged.archive_path),
+        )
+        .map_err(|err| {
+            error!("[PACKAGER] Failed to write history: {err}");
+            err.to_string()
+        })?;
+
+    Ok(PackageResponse {
+        packaged,
+        history: history_entry,
+    })
 }
 
 #[tauri::command]

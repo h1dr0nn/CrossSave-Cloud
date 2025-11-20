@@ -27,6 +27,18 @@ export interface HistoryEntry {
   metadata: SaveMetadata;
 }
 
+export interface EmulatorProfile {
+  emulator_id: string;
+  name: string;
+  default_save_paths: string[];
+  file_patterns: string[];
+}
+
+export interface PackageResponse {
+  packaged: PackagedSave;
+  history: HistoryEntry;
+}
+
 export function startWatcher(paths: string[]): Promise<void> {
   return invoke("start_watcher", { paths });
 }
@@ -46,13 +58,21 @@ export function packageSave(
   emulatorId: string,
   paths: string[],
   patterns: string[]
-): Promise<PackagedSave> {
+): Promise<PackageResponse> {
   return invoke("package_save", {
     game_id: gameId,
     emulator_id: emulatorId,
     paths,
     patterns
   });
+}
+
+export function listProfiles(): Promise<EmulatorProfile[]> {
+  return invoke("list_profiles");
+}
+
+export function validatePaths(paths: string[]): Promise<string[]> {
+  return invoke("validate_paths", { paths });
 }
 
 export function listHistory(gameId: string): Promise<HistoryEntry[]> {
