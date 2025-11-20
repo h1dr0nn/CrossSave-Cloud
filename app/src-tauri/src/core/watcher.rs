@@ -133,13 +133,16 @@ impl WatcherManager {
     }
 
     pub async fn stop(&self) -> Result<(), WatcherError> {
-        let mut guard = self
-            .inner
-            .lock()
-            .map_err(|err| WatcherError::Lock(err.to_string()))?;
-        let Some(instance) = guard.take() else {
-            warn!("[WATCHER] Attempted to stop watcher but none running");
-            return Err(WatcherError::NotRunning);
+        let instance = {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|err| WatcherError::Lock(err.to_string()))?;
+            let Some(instance) = guard.take() else {
+                warn!("[WATCHER] Attempted to stop watcher but none running");
+                return Err(WatcherError::NotRunning);
+            };
+            instance
         };
 
         info!("[WATCHER] Stopping watcher");
@@ -250,5 +253,3 @@ fn map_event_kind(kind: &EventKind) -> Option<WatchEventType> {
 pub fn watcher_event_name() -> &'static str {
     WATCHER_EVENT_NAME
 }
-
-pub type SharedWatcherManager<'a> = tauri::State<'a, WatcherManager>;

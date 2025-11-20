@@ -2,12 +2,12 @@ use std::path::PathBuf;
 
 use tracing::{error, info, warn};
 
-use crate::core::watcher::{SharedWatcherManager, WatcherError};
+use crate::core::watcher::{WatcherError, WatcherManager};
 
 #[tauri::command]
 pub async fn start_watcher(
     app: tauri::AppHandle,
-    state: SharedWatcherManager<'_>,
+    state: tauri::State<'_, WatcherManager>,
     paths: Vec<String>,
 ) -> Result<(), String> {
     let resolved_paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
@@ -24,7 +24,7 @@ pub async fn start_watcher(
 }
 
 #[tauri::command]
-pub async fn stop_watcher(state: SharedWatcherManager<'_>) -> Result<(), String> {
+pub async fn stop_watcher(state: tauri::State<'_, WatcherManager>) -> Result<(), String> {
     match state.stop().await {
         Ok(_) => {
             info!("[WATCHER] Watcher stopped from API");

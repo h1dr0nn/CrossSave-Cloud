@@ -19,17 +19,10 @@ pub async fn list_history(
 ) -> Result<Vec<HistoryEntry>, String> {
     let sanitized_game_id = sanitize_input(game_id, "game_id")?;
 
-    let manager = state.clone();
-    let join_result = tauri::async_runtime::spawn_blocking(move || {
-        manager.list_history(sanitized_game_id).map_err(|err| {
-            error!("[HISTORY] Failed to list history: {err}");
-            err.to_string()
-        })
+    state.list_history(sanitized_game_id).map_err(|err| {
+        error!("[HISTORY] Failed to list history: {err}");
+        err.to_string()
     })
-    .await
-    .map_err(|err| err.to_string())?;
-
-    join_result
 }
 
 #[tauri::command]
@@ -41,19 +34,12 @@ pub async fn get_history_item(
     let sanitized_game_id = sanitize_input(game_id, "game_id")?;
     let sanitized_version_id = sanitize_input(version_id, "version_id")?;
 
-    let manager = state.clone();
-    let join_result = tauri::async_runtime::spawn_blocking(move || {
-        manager
-            .get_history_item(sanitized_game_id, sanitized_version_id)
-            .map_err(|err| {
-                error!("[HISTORY] Failed to fetch history item: {err}");
-                err.to_string()
-            })
-    })
-    .await
-    .map_err(|err| err.to_string())?;
-
-    join_result
+    state
+        .get_history_item(sanitized_game_id, sanitized_version_id)
+        .map_err(|err| {
+            error!("[HISTORY] Failed to fetch history item: {err}");
+            err.to_string()
+        })
 }
 
 #[tauri::command]
@@ -65,19 +51,12 @@ pub async fn rollback_version(
     let sanitized_game_id = sanitize_input(game_id, "game_id")?;
     let sanitized_version_id = sanitize_input(version_id, "version_id")?;
 
-    let manager = state.clone();
-    let join_result = tauri::async_runtime::spawn_blocking(move || {
-        manager
-            .rollback_version(sanitized_game_id, sanitized_version_id)
-            .map_err(|err| {
-                error!("[HISTORY] Rollback failed: {err}");
-                err.to_string()
-            })
-    })
-    .await
-    .map_err(|err| err.to_string())?;
-
-    join_result
+    state
+        .rollback_version(sanitized_game_id, sanitized_version_id)
+        .map_err(|err| {
+            error!("[HISTORY] Rollback failed: {err}");
+            err.to_string()
+        })
 }
 
 #[tauri::command]
@@ -89,17 +68,10 @@ pub async fn delete_history_item(
     let sanitized_game_id = sanitize_input(game_id, "game_id")?;
     let sanitized_version_id = sanitize_input(version_id, "version_id")?;
 
-    let manager = state.clone();
-    let join_result = tauri::async_runtime::spawn_blocking(move || {
-        manager
-            .delete_history_item(sanitized_game_id, sanitized_version_id)
-            .map_err(|err| {
-                warn!("[HISTORY] Failed to delete history item: {err}");
-                err.to_string()
-            })
-    })
-    .await
-    .map_err(|err| err.to_string())?;
-
-    join_result
+    state
+        .delete_history_item(sanitized_game_id, sanitized_version_id)
+        .map_err(|err| {
+            warn!("[HISTORY] Failed to delete history item: {err}");
+            err.to_string()
+        })
 }
