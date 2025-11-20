@@ -251,4 +251,4 @@ pub fn watcher_event_name() -> &'static str {
     WATCHER_EVENT_NAME
 }
 
-pub type SharedWatcherManager = tauri::State<'_, WatcherManager>;
+pub type SharedWatcherManager<'a> = tauri::State<'a, WatcherManager>;

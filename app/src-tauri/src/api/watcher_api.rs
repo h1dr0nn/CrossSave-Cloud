@@ -7,7 +7,7 @@ use crate::core::watcher::{SharedWatcherManager, WatcherError};
 #[tauri::command]
 pub async fn start_watcher(
     app: tauri::AppHandle,
-    state: SharedWatcherManager,
+    state: SharedWatcherManager<'_>,
     paths: Vec<String>,
 ) -> Result<(), String> {
     let resolved_paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
@@ -24,7 +24,7 @@ pub async fn start_watcher(
 }
 
 #[tauri::command]
-pub async fn stop_watcher(state: SharedWatcherManager) -> Result<(), String> {
+pub async fn stop_watcher(state: SharedWatcherManager<'_>) -> Result<(), String> {
     match state.stop().await {
         Ok(_) => {
             info!("[WATCHER] Watcher stopped from API");

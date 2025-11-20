@@ -29,7 +29,7 @@ pub async fn package_save(
 
     let packager = SavePackager::new(game_id, emulator_id);
 
-    tauri::async_runtime::spawn_blocking(move || {
+    let join_result = tauri::async_runtime::spawn_blocking(move || {
         let mut packager = packager;
         match packager.package_save(sanitized_paths, sanitized_patterns) {
             Ok(result) => {
@@ -43,7 +43,9 @@ pub async fn package_save(
         }
     })
     .await
-    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+
+    join_result
 }
 
 #[tauri::command]
@@ -54,7 +56,7 @@ pub async fn validate_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
         .map(PathBuf::from)
         .collect();
 
-    tauri::async_runtime::spawn_blocking(move || {
+    let join_result = tauri::async_runtime::spawn_blocking(move || {
         let mut valid: Vec<String> = Vec::new();
 
         for path in cleaned {
@@ -75,5 +77,7 @@ pub async fn validate_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
         }
     })
     .await
-    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+
+    join_result
 }
