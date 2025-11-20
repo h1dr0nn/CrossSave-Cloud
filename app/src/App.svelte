@@ -2,12 +2,15 @@
   import WatcherPanel from "./components/WatcherPanel.svelte";
   import PackagerPanel from "./components/PackagerPanel.svelte";
   import HistoryPanel from "./components/HistoryPanel.svelte";
+  import ProfilePanel from "./components/ProfilePanel.svelte";
+  import NotificationLog from "./components/NotificationLog.svelte";
 
-  type Tab = "watcher" | "packager" | "history";
+  type Tab = "watcher" | "packager" | "profiles" | "history";
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "watcher", label: "Watcher" },
     { id: "packager", label: "Packager" },
+    { id: "profiles", label: "Profiles" },
     { id: "history", label: "History" }
   ];
 
@@ -33,10 +36,14 @@
       <WatcherPanel />
     {:else if activeTab === "packager"}
       <PackagerPanel />
+    {:else if activeTab === "profiles"}
+      <ProfilePanel />
     {:else}
       <HistoryPanel />
     {/if}
   </section>
+
+  <NotificationLog />
 </main>
 
 <style>

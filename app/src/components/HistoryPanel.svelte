@@ -1,22 +1,37 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import type { HistoryEntry, PackagedSave } from "../lib/api";
   import { deleteHistoryItem, getHistoryItem, listHistory, rollbackVersion } from "../lib/api";
+  import { historyState, setHistory } from "../lib/historyStore";
+  import { pushError, pushInfo } from "../lib/notifications";
 
   let gameId = "";
   let versionId = "";
-  let history: HistoryEntry[] = [];
   let selected: HistoryEntry | null = null;
   let rollbackResult: PackagedSave | null = null;
   let message = "";
+  let historyData = { gameId: "", entries: [] as HistoryEntry[] };
+
+  const unsubscribe = historyState.subscribe((value) => {
+    historyData = value;
+    if (!gameId && value.gameId) {
+      gameId = value.gameId;
+    }
+  });
+
+  onDestroy(() => unsubscribe());
 
   const handleList = async () => {
     message = "";
     selected = null;
     rollbackResult = null;
     try {
-      history = await listHistory(gameId.trim());
+      const entries = await listHistory(gameId.trim());
+      setHistory(gameId.trim(), entries);
+      message = "History loaded";
+      pushInfo(`Loaded ${entries.length} history entries`);
     } catch (error) {
-      message = `List failed: ${error}`;
+      pushError(`History list failed: ${error}`);
     }
   };
 
@@ -25,8 +40,9 @@
     rollbackResult = null;
     try {
       selected = await getHistoryItem(gameId.trim(), versionId.trim());
+      pushInfo(`Fetched history entry ${versionId}`);
     } catch (error) {
-      message = `Get failed: ${error}`;
+      pushError(`Get failed: ${error}`);
     }
   };
 
@@ -35,8 +51,9 @@
     try {
       rollbackResult = await rollbackVersion(gameId.trim(), versionId.trim());
       message = "Rollback completed";
+      pushInfo(`Rollback completed for ${versionId}`);
     } catch (error) {
-      message = `Rollback failed: ${error}`;
+      pushError(`Rollback failed: ${error}`);
     }
   };
 
@@ -45,8 +62,9 @@
     try {
       await deleteHistoryItem(gameId.trim(), versionId.trim());
       message = "History entry deleted";
+      pushInfo(`Deleted ${versionId} for ${gameId}`);
     } catch (error) {
-      message = `Delete failed: ${error}`;
+      pushError(`Delete failed: ${error}`);
     }
   };
 </script>
@@ -75,8 +93,8 @@
 
   <div class="output">
     <p class="section-title">History List</p>
-    {#if history.length}
-      <pre>{JSON.stringify(history, null, 2)}</pre>
+    {#if historyData.entries.length}
+      <pre>{JSON.stringify(historyData.entries, null, 2)}</pre>
     {:else}
       <p class="placeholder">History list is empty.</p>
     {/if}

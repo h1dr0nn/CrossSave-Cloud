@@ -1,13 +1,15 @@
 <script lang="ts">
-  import type { PackagedSave } from "../lib/api";
+  import type { PackageResponse } from "../lib/api";
   import { packageSave } from "../lib/api";
+  import { addHistoryEntry } from "../lib/historyStore";
+  import { pushError, pushInfo } from "../lib/notifications";
 
   let gameId = "";
   let emulatorId = "";
   let pathsInput = "";
   let patternsInput = "";
-  let result: PackagedSave | null = null;
-  let errorMessage = "";
+  let result: PackageResponse | null = null;
+  let packaging = false;
 
   const parseLines = (value: string) =>
     value
@@ -16,13 +18,23 @@
       .filter(Boolean);
 
   const handlePackage = async () => {
-    errorMessage = "";
     result = null;
+    packaging = true;
 
     try {
-      result = await packageSave(gameId.trim(), emulatorId.trim(), parseLines(pathsInput), parseLines(patternsInput));
+      const response = await packageSave(
+        gameId.trim(),
+        emulatorId.trim(),
+        parseLines(pathsInput),
+        parseLines(patternsInput)
+      );
+      result = response;
+      addHistoryEntry(response.history);
+      pushInfo(`Packaged ${response.packaged.metadata.version_id} and saved to history`);
     } catch (error) {
-      errorMessage = `Package failed: ${error}`;
+      pushError(`Package failed: ${error}`);
+    } finally {
+      packaging = false;
     }
   };
 </script>
@@ -52,14 +64,14 @@
   </div>
 
   <div class="actions">
-    <button on:click={handlePackage}>Package Save</button>
-    {#if errorMessage}
-      <span class="error">{errorMessage}</span>
+    <button on:click={handlePackage} disabled={packaging}>Package Save</button>
+    {#if packaging}
+      <span class="status">Packaging...</span>
     {/if}
   </div>
 
   <div class="output">
-    <p class="section-title">Metadata</p>
+    <p class="section-title">Package + History Result</p>
     {#if result}
       <pre>{JSON.stringify(result, null, 2)}</pre>
     {:else}
@@ -124,9 +136,9 @@
     background: #e2e8f0;
   }
 
-  .error {
-    color: #b91c1c;
+  .status {
     font-size: 13px;
+    color: #0f172a;
   }
 
   .output pre {

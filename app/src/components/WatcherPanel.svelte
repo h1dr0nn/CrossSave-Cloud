@@ -1,12 +1,19 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import type { FsEventPayload } from "../lib/api";
-  import { startWatcher, stopWatcher, subscribeFsEvents } from "../lib/api";
+  import type { FsEventPayload, PackageResponse } from "../lib/api";
+  import { packageSave, startWatcher, stopWatcher, subscribeFsEvents } from "../lib/api";
+  import { pushError, pushInfo } from "../lib/notifications";
+  import { addHistoryEntry } from "../lib/historyStore";
 
   let pathsInput = "";
   let logs: string[] = [];
   let statusMessage = "";
   let unsubscribe: (() => void) | null = null;
+  let gameId = "";
+  let emulatorId = "";
+  let patternsInput = "";
+  let lastPackage: PackageResponse | null = null;
+  let packaging = false;
 
   const parsePaths = () =>
     pathsInput
@@ -37,8 +44,9 @@
     try {
       await startWatcher(parsePaths());
       statusMessage = "Watcher started";
+      pushInfo("Watcher started");
     } catch (error) {
-      statusMessage = `Start failed: ${error}`;
+      pushError(`Watcher start failed: ${error}`);
     }
   };
 
@@ -47,8 +55,35 @@
     try {
       await stopWatcher();
       statusMessage = "Watcher stopped";
+      pushInfo("Watcher stopped");
     } catch (error) {
-      statusMessage = `Stop failed: ${error}`;
+      pushError(`Watcher stop failed: ${error}`);
+    }
+  };
+
+  const parsePatterns = () =>
+    patternsInput
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+  const handleManualPackage = async () => {
+    packaging = true;
+    lastPackage = null;
+    try {
+      const response = await packageSave(
+        gameId.trim(),
+        emulatorId.trim(),
+        parsePaths(),
+        parsePatterns()
+      );
+      lastPackage = response;
+      addHistoryEntry(response.history);
+      pushInfo(`Packaged ${response.packaged.metadata.version_id} and saved to history`);
+    } catch (error) {
+      pushError(`Manual package failed: ${error}`);
+    } finally {
+      packaging = false;
     }
   };
 </script>
@@ -60,6 +95,23 @@
 /home/user/.config/game"></textarea>
   </div>
 
+  <div class="grid">
+    <div class="field">
+      <label for="game">game_id</label>
+      <input id="game" type="text" bind:value={gameId} placeholder="my_game" />
+    </div>
+    <div class="field">
+      <label for="emulator">emulator_id</label>
+      <input id="emulator" type="text" bind:value={emulatorId} placeholder="citra" />
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="patterns">Patterns (glob, one per line)</label>
+    <textarea id="patterns" rows="3" bind:value={patternsInput} placeholder="**/*.sav
+**/*.bin"></textarea>
+  </div>
+
   <div class="actions">
     <button on:click={handleStart}>Start Watcher</button>
     <button on:click={handleStop}>Stop Watcher</button>
@@ -67,6 +119,20 @@
       <span class="status">{statusMessage}</span>
     {/if}
   </div>
+
+  <div class="actions">
+    <button on:click={handleManualPackage} disabled={packaging}>Manual Package Now</button>
+    {#if packaging}
+      <span class="status">Packaging...</span>
+    {/if}
+  </div>
+
+  {#if lastPackage}
+    <div class="output">
+      <p class="section-title">Last Package (with history save)</p>
+      <pre>{JSON.stringify(lastPackage, null, 2)}</pre>
+    </div>
+  {/if}
 
   <div class="logs">
     <p class="section-title">File Events</p>
@@ -93,6 +159,12 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
   }
 
   label {
@@ -152,6 +224,14 @@
     overflow-y: auto;
     font-family: monospace;
     font-size: 13px;
+  }
+
+  .output pre {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
   }
 
   .placeholder {
