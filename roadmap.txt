@@ -1,111 +1,136 @@
 PROJECT: CrossSave Cloud
 VERSION: 0.1
-PLATFORM TARGET: Linux + Android
-STATUS: Core system initializing
+TARGET PLATFORM: Linux-first, Android later
+GOAL: Full Local Logic + GUI before Cloud Sync
 
 ========================================
-ROADMAP OVERVIEW (4 PHASES)
-========================================
-
-[PHASE 1] CORE SYSTEM (LINUX-FIRST)
+PHASE 1 — LOCAL CORE SYSTEM (LINUX)
 STATUS: IN PROGRESS
+========================================
 
-1.1 File Watcher (Linux)
-- Implement inotify watcher
-- Detect add/remove/modify
-- Debounce events
-- Log events into UI
+1.1 Watcher Engine (DONE)
+- Inotify-based watcher
+- Debounce
+- Event streaming to UI
+- Multi-path support
 
-1.2 Emulator Profile System
-- Load profile JSON: {name, emulator_id, save_path, patterns}
-- Allow user override paths
-- Prepare default profiles: RetroArch, PPSSPP, Dolphin
-- Auto-detect if executable exists
+1.2 Emulator Profile System (DONE)
+- Load JSON profiles
+- Validate paths & patterns
+- Provide usable default profiles
+- Manual profile testing in UI
 
-1.3 Save Packaging
-- Zip/Tar.gz compression
-- Metadata JSON: game_id, emulator_id, timestamp, hash, file list
-- Generate version_id
+1.3 Save Packaging Engine (DONE)
+- Collect files by rules/patterns
+- Create archive
+- Metadata builder
+- Version-id hashing
 
-1.4 Local History
-- Keep last 5–10 versions
-- Manual restore
-- Compare size/hash of versions
+1.4 Local Save History (DONE)
+- Store up to 10 versions
+- Rollback function
+- Delete version
+- Version metadata view
+
+1.5 Local Test UI (IN PROGRESS)
+- Watcher panel
+- Packager panel
+- History panel
+- Error toast + logging
+- Minimal layout for testing backend
 
 ----------------------------------------
-
-[PHASE 2] CLOUD SYNC SYSTEM
+PHASE 2 — LOCAL FULL UI/UX
 STATUS: PENDING
+----------------------------------------
 
-2.1 Cloud API (simple)
-- POST /upload
-- GET /latest
-- GET /versions
-- Use S3/Supabase storage
+2.1 Main Application UI
+- Sidebar: Emulator list
+- Auto-load profiles
+- Game list per emulator
+- Save folder + pattern preview
 
-2.2 Sync Logic
-- Latest-wins strategy
-- Detect conflicts: timestamp + hash + device_id
+2.2 Game Detail View
+- Current save info
+- Manual save packaging
+- Recent history panel
+- Compare versions (hash/size/file count)
 
-2.3 Cloud Account Settings UI
-- Login flow
-- Device list
-- Auto-sync toggle
+2.3 Integrated Watcher UI
+- Live file-change feed
+- Save-changed indicator
+- Auto-package toggle
+
+2.4 Settings UI
+- Add/edit emulator profiles
+- Override save paths
+- Backup retention settings
+- App storage settings
+
+----------------------------------------
+PHASE 3 — CLOUD SYNC SYSTEM
+STATUS: PENDING (Start after UI stable)
+----------------------------------------
+
+3.1 Cloud API
+- Upload archive
+- List versions
+- Download version
+- Device_id assignment
+
+3.2 Sync Logic
+- Latest-wins + conflict detection
+- Tracking upload queue
+- Throttled sync
+
+3.3 Cloud Account UI
+- Login page
+- Device management
 - Manual Sync button
-- Version history display
+- Cloud version history
 
 ----------------------------------------
-
-[PHASE 3] ANDROID SUPPORT
+PHASE 4 — ANDROID VERSION
 STATUS: PENDING
-
-3.1 Storage Permissions (SAF)
-- User selects emulator save folders
-- Save URI permission
-
-3.2 File Watcher (Android)
-- FileObserver integration
-- Rust <> Android binding
-
-3.3 Cloud Integration
-- Auto-upload on save change
-- Auto-download on app open
-- Manual sync for battery saving
-
-3.4 Background Behavior
-- Sync only when WiFi + Charging (optional)
-- Notification for conflicts
-
 ----------------------------------------
 
-[PHASE 4] RELEASE + POLISH
+4.1 Android Storage Access
+- SAF path selector
+- Persisted URI permissions
+
+4.2 Android Watcher
+- FileObserver wrapper
+- Rust+Tauri mobile bridge
+
+4.3 Android Sync Engine
+- Battery-optimized background rules
+- WiFi-only syncing
+
+----------------------------------------
+PHASE 5 — RELEASE & POLISH
 STATUS: PENDING
+----------------------------------------
 
-4.1 UI/UX
-- Sidebar: Emulators
-- Game List
-- Save version viewer
-- Activity log
-- Settings page
+5.1 Performance / Optimizations
+- Reduce memory footprint
+- Optimize watchers
+- Async packaging pipeline
 
-4.2 Advanced Features (optional)
-- LAN peer-to-peer sync
-- Community emulator profiles
-- Import/Export save manually
-- Steam Deck preset paths
+5.2 Platform Packaging
+- Linux AppImage / .deb / Flatpak
+- Android APK / AAB
 
-4.3 Release
-- Linux: AppImage, .deb, Flatpak
-- Android: APK + AAB
-- GitHub Actions CI/CD builds
+5.3 Nice-to-have Features
+- LAN sync mode
+- Steam Deck presets
+- Plugin system for community profiles
 
 ========================================
 CURRENT PROJECT POSITION
 ========================================
-PHASE: PHASE 1 — CORE SYSTEM
-SUBTASK: Linux environment & Tauri project initialization completed.
-NEXT ACTION: Implement Linux File Watcher module.
+PHASE: 1 — Local Core System
+SUBTASK: 1.5 Local Test UI in progress
+NEXT: Integrate watcher/packager/history into unified test UI
 
 ========================================
-END OF FILE
-========================================
+END
