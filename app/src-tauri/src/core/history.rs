@@ -1,0 +1,368 @@
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
+
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+use tracing::{error, info, warn};
+
+use crate::core::packager::{PackagedSave, SaveMetadata};
+
+const MAX_HISTORY: usize = 10;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HistoryEntry {
+    pub archive_path: String,
+    pub metadata_path: String,
+    pub metadata: SaveMetadata,
+}
+
+#[derive(Debug, Error)]
+pub enum HistoryError {
+    #[error("io error: {0}")]
+    Io(String),
+    #[error("serialization error: {0}")]
+    Serialization(String),
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
+    #[error("cache lock error: {0}")]
+    Lock(String),
+    #[error("history item not found: {0}")]
+    NotFound(String),
+}
+
+#[derive(Debug)]
+pub struct HistoryManager {
+    pub base_dir: PathBuf,
+    cache: Mutex<HashMap<String, Vec<HistoryEntry>>>,
+}
+
+impl Default for HistoryManager {
+    fn default() -> Self {
+        let app_dir = tauri::api::path::app_data_dir(&tauri::Config::default())
+            .unwrap_or_else(|| std::env::temp_dir());
+        let base_dir = app_dir.join("archives").join("history");
+
+        match Self::init(base_dir.clone()) {
+            Ok(manager) => manager,
+            Err(err) => {
+                error!("[HISTORY] Failed to initialize history manager: {err}");
+                Self {
+                    base_dir,
+                    cache: Mutex::new(HashMap::new()),
+                }
+            }
+        }
+    }
+}
+
+impl HistoryManager {
+    pub fn init(base_dir: PathBuf) -> Result<Self, HistoryError> {
+        fs::create_dir_all(&base_dir).map_err(|err| HistoryError::Io(err.to_string()))?;
+
+        let mut cache: HashMap<String, Vec<HistoryEntry>> = HashMap::new();
+
+        let entries = fs::read_dir(&base_dir).map_err(|err| HistoryError::Io(err.to_string()))?;
+
+        for entry in entries {
+            let entry = match entry {
+                Ok(value) => value,
+                Err(err) => {
+                    warn!("[HISTORY] Failed to read game directory: {err}");
+                    continue;
+                }
+            };
+
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            let Some(game_id) = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(String::from)
+            else {
+                warn!("[HISTORY] Skipping invalid game directory name: {:?}", path);
+                continue;
+            };
+
+            let mut history_entries: Vec<HistoryEntry> = Vec::new();
+            let files = match fs::read_dir(&path) {
+                Ok(files) => files,
+                Err(err) => {
+                    warn!("[HISTORY] Failed to read history folder for {game_id}: {err}");
+                    continue;
+                }
+            };
+
+            for file in files {
+                let file = match file {
+                    Ok(value) => value,
+                    Err(err) => {
+                        warn!("[HISTORY] Failed to read history file entry: {err}");
+                        continue;
+                    }
+                };
+
+                let file_path = file.path();
+                if file_path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                    continue;
+                }
+
+                match Self::load_entry(&file_path, &game_id) {
+                    Ok(entry) => history_entries.push(entry),
+                    Err(err) => warn!("[HISTORY] Skipping malformed history entry: {err}"),
+                }
+            }
+
+            history_entries.sort_by(|a, b| b.metadata.timestamp.cmp(&a.metadata.timestamp));
+
+            while history_entries.len() > MAX_HISTORY {
+                warn!("[HISTORY] Trimming history for {game_id} to {MAX_HISTORY} entries");
+                if let Some(entry) = history_entries.pop() {
+                    if let Err(err) = Self::remove_files(&entry) {
+                        warn!("[HISTORY] Failed to clean trimmed entry: {err}");
+                    }
+                }
+            }
+
+            cache.insert(game_id, history_entries);
+        }
+
+        Ok(Self {
+            base_dir,
+            cache: Mutex::new(cache),
+        })
+    }
+
+    pub fn save_to_history(
+        &self,
+        metadata: SaveMetadata,
+        archive_path: PathBuf,
+    ) -> Result<HistoryEntry, HistoryError> {
+        if metadata.game_id.trim().is_empty() {
+            return Err(HistoryError::InvalidInput("game_id missing".into()));
+        }
+
+        if metadata.version_id.trim().is_empty() {
+            return Err(HistoryError::InvalidInput("version_id missing".into()));
+        }
+
+        if !archive_path.exists() {
+            return Err(HistoryError::InvalidInput(
+                "archive path does not exist".into(),
+            ));
+        }
+
+        let game_dir = self.base_dir.join(&metadata.game_id);
+        fs::create_dir_all(&game_dir).map_err(|err| HistoryError::Io(err.to_string()))?;
+
+        let archive_destination = game_dir.join(format!("{}.zip", metadata.version_id));
+        fs::copy(&archive_path, &archive_destination)
+            .map_err(|err| HistoryError::Io(err.to_string()))?;
+
+        let metadata_destination = game_dir.join(format!("{}.json", metadata.version_id));
+        let metadata_json = serde_json::to_string_pretty(&metadata)
+            .map_err(|err| HistoryError::Serialization(err.to_string()))?;
+        fs::write(&metadata_destination, metadata_json)
+            .map_err(|err| HistoryError::Io(err.to_string()))?;
+
+        let entry = HistoryEntry {
+            archive_path: archive_destination.to_string_lossy().to_string(),
+            metadata_path: metadata_destination.to_string_lossy().to_string(),
+            metadata,
+        };
+
+        self.insert_entry(entry.clone())?;
+        info!(
+            "[HISTORY] Saved version {} to history",
+            entry.metadata.version_id
+        );
+
+        Ok(entry)
+    }
+
+    pub fn list_history(&self, game_id: String) -> Result<Vec<HistoryEntry>, HistoryError> {
+        let mut guard = self
+            .cache
+            .lock()
+            .map_err(|err| HistoryError::Lock(err.to_string()))?;
+
+        if let Some(entries) = guard.get_mut(&game_id) {
+            entries.sort_by(|a, b| b.metadata.timestamp.cmp(&a.metadata.timestamp));
+            return Ok(entries.clone());
+        }
+
+        Ok(Vec::new())
+    }
+
+    pub fn get_history_item(
+        &self,
+        game_id: String,
+        version_id: String,
+    ) -> Result<HistoryEntry, HistoryError> {
+        let guard = self
+            .cache
+            .lock()
+            .map_err(|err| HistoryError::Lock(err.to_string()))?;
+
+        let Some(entries) = guard.get(&game_id) else {
+            return Err(HistoryError::NotFound(format!("{game_id}:{version_id}")));
+        };
+
+        entries
+            .iter()
+            .find(|entry| entry.metadata.version_id == version_id)
+            .cloned()
+            .ok_or_else(|| HistoryError::NotFound(format!("{game_id}:{version_id}")))
+    }
+
+    pub fn rollback_version(
+        &self,
+        game_id: String,
+        version_id: String,
+    ) -> Result<PackagedSave, HistoryError> {
+        let entry = self.get_history_item(game_id.clone(), version_id.clone())?;
+        let archives_root = self.archives_root();
+        fs::create_dir_all(&archives_root).map_err(|err| HistoryError::Io(err.to_string()))?;
+
+        let archive_destination = archives_root.join(format!("{}_{}.zip", game_id, version_id));
+        fs::copy(Path::new(&entry.archive_path), &archive_destination)
+            .map_err(|err| HistoryError::Io(err.to_string()))?;
+
+        let metadata_destination = archives_root.join(format!("{}_{}.json", game_id, version_id));
+        let metadata_json = serde_json::to_string_pretty(&entry.metadata)
+            .map_err(|err| HistoryError::Serialization(err.to_string()))?;
+        fs::write(&metadata_destination, metadata_json)
+            .map_err(|err| HistoryError::Io(err.to_string()))?;
+
+        info!(
+            "[HISTORY] Rolled back {game_id} to version {}",
+            entry.metadata.version_id
+        );
+
+        Ok(PackagedSave {
+            archive_path: archive_destination.to_string_lossy().to_string(),
+            metadata: entry.metadata,
+        })
+    }
+
+    pub fn delete_history_item(
+        &self,
+        game_id: String,
+        version_id: String,
+    ) -> Result<(), HistoryError> {
+        let mut guard = self
+            .cache
+            .lock()
+            .map_err(|err| HistoryError::Lock(err.to_string()))?;
+
+        let Some(entries) = guard.get_mut(&game_id) else {
+            return Err(HistoryError::NotFound(format!("{game_id}:{version_id}")));
+        };
+
+        if let Some(index) = entries
+            .iter()
+            .position(|entry| entry.metadata.version_id == version_id)
+        {
+            let removed = entries.remove(index);
+            Self::remove_files(&removed)?;
+            info!("[HISTORY] Deleted version {version_id} for {game_id}");
+            return Ok(());
+        }
+
+        Err(HistoryError::NotFound(format!("{game_id}:{version_id}")))
+    }
+
+    fn load_entry(path: &Path, game_id: &str) -> Result<HistoryEntry, HistoryError> {
+        let metadata_content =
+            fs::read_to_string(path).map_err(|err| HistoryError::Io(err.to_string()))?;
+        let metadata: SaveMetadata = serde_json::from_str(&metadata_content)
+            .map_err(|err| HistoryError::Serialization(err.to_string()))?;
+
+        if metadata.game_id != game_id {
+            warn!(
+                "[HISTORY] Metadata game_id mismatch for {:?}: expected {}, got {}",
+                path, game_id, metadata.game_id
+            );
+        }
+
+        let archive_path = path.with_extension("zip");
+        if !archive_path.exists() {
+            return Err(HistoryError::NotFound(format!(
+                "archive missing for metadata {:?}",
+                path
+            )));
+        }
+
+        Ok(HistoryEntry {
+            archive_path: archive_path.to_string_lossy().to_string(),
+            metadata_path: path.to_string_lossy().to_string(),
+            metadata,
+        })
+    }
+
+    fn insert_entry(&self, entry: HistoryEntry) -> Result<(), HistoryError> {
+        let mut guard = self
+            .cache
+            .lock()
+            .map_err(|err| HistoryError::Lock(err.to_string()))?;
+        let history = guard.entry(entry.metadata.game_id.clone()).or_default();
+        history.retain(|existing| existing.metadata.version_id != entry.metadata.version_id);
+        history.push(entry);
+        history.sort_by(|a, b| b.metadata.timestamp.cmp(&a.metadata.timestamp));
+
+        while history.len() > MAX_HISTORY {
+            if let Some(removed) = history.pop() {
+                warn!(
+                    "[HISTORY] Removing oldest history entry {} for {}",
+                    removed.metadata.version_id, removed.metadata.game_id
+                );
+                if let Err(err) = Self::remove_files(&removed) {
+                    warn!("[HISTORY] Failed to remove trimmed entry: {err}");
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn remove_files(entry: &HistoryEntry) -> Result<(), HistoryError> {
+        if let Err(err) = fs::remove_file(&entry.archive_path) {
+            warn!(
+                "[HISTORY] Failed to delete archive {}: {}",
+                &entry.archive_path, err
+            );
+        }
+
+        if let Err(err) = fs::remove_file(&entry.metadata_path) {
+            warn!(
+                "[HISTORY] Failed to delete metadata {}: {}",
+                &entry.metadata_path, err
+            );
+        }
+
+        Ok(())
+    }
+
+    fn archives_root(&self) -> PathBuf {
+        self.base_dir
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| self.base_dir.clone())
+    }
+}
+
+// Example metadata JSON stored for each history entry
+// {
+//   "game_id": "super_mario_world",
+//   "emulator_id": "retroarch",
+//   "timestamp": 1700000000,
+//   "version_id": "v1_abcdef",
+//   "file_list": ["save.srm"],
+//   "hash": "a1b2c3d4"
+// }
