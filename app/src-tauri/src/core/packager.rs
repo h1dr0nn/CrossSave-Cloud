@@ -123,9 +123,10 @@ impl SavePackager {
             .clone()
             .ok_or_else(|| PackagerError::InvalidInput("version_id not set".into()))?;
 
-        let archives_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("data")
-            .join("archives");
+        let app_dir = tauri::api::path::app_data_dir(&tauri::Config::default())
+            .unwrap_or_else(|| std::env::temp_dir());
+
+        let archives_dir = app_dir.join("archives");
 
         fs::create_dir_all(&archives_dir).map_err(|err| PackagerError::Io(err.to_string()))?;
 
