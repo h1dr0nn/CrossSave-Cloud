@@ -206,12 +206,15 @@
 
 <style>
   .detail-shell {
+    --space-sm: 12px;
+    --space-md: 16px;
+    --space-lg: 24px;
     max-width: 1200px;
     margin: 0 auto;
-    padding: clamp(16px, 4vw, 32px);
+    padding: clamp(var(--space-md), 4vw, 32px);
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: var(--space-lg);
     min-height: 100vh;
     color: var(--text);
   }
@@ -219,8 +222,8 @@
   .detail-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
+    gap: var(--space-md);
+    padding: var(--space-md);
     border-radius: var(--radius);
     background: color-mix(in srgb, var(--surface) 92%, transparent);
     border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
@@ -265,7 +268,7 @@
   .header-actions {
     display: flex;
     align-items: center;
-    gap: clamp(8px, 1vw, 12px);
+    gap: clamp(10px, 1vw, var(--space-md));
     flex-wrap: nowrap;
     min-width: 0;
     margin-left: auto;
@@ -280,10 +283,10 @@
     background: color-mix(in srgb, var(--surface) 90%, transparent);
     border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
     border-radius: var(--radius);
-    padding: clamp(16px, 2vw, 22px);
+    padding: clamp(var(--space-md), 2vw, var(--space-lg));
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: clamp(12px, 2vw, 18px);
+    gap: clamp(var(--space-md), 2vw, var(--space-lg));
     align-items: center;
     box-shadow: var(--shadow-soft);
     backdrop-filter: blur(14px);
@@ -372,7 +375,7 @@
   .info-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 14px;
+    gap: var(--space-lg);
     align-items: stretch;
   }
 
@@ -380,7 +383,7 @@
     border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
     background: color-mix(in srgb, var(--surface) 94%, transparent);
     border-radius: var(--radius);
-    padding: 16px 18px;
+    padding: var(--space-md);
     box-shadow: var(--shadow-soft);
     backdrop-filter: blur(12px);
   }
@@ -410,7 +413,7 @@
   .panels {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 14px;
+    gap: var(--space-lg);
     align-items: stretch;
   }
 
@@ -424,8 +427,8 @@
   dl {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px;
-    margin: 12px 0 0;
+    gap: var(--space-md);
+    margin: var(--space-sm) 0 0;
   }
 
   dt {
