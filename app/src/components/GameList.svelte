@@ -72,11 +72,11 @@
 
 <style>
   .panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: clamp(12px, 1vw, 16px);
-    padding: clamp(14px, 2vw, 20px);
-    box-shadow: var(--shadow-strong);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface));
+    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow-soft);
     min-height: 0;
     color: var(--text);
   }
@@ -86,57 +86,57 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: clamp(12px, 2vw, 16px);
+    margin-bottom: 12px;
   }
 
   h2 {
     margin: 2px 0 0;
-    font-size: clamp(1.2rem, 0.8vw + 1rem, 1.5rem);
+    font-size: clamp(1.1rem, 0.7vw + 1rem, 1.35rem);
     color: var(--text);
   }
 
   .eyebrow {
     margin: 0;
     color: var(--muted);
-    font-size: clamp(0.85rem, 0.3vw + 0.75rem, 0.95rem);
-    letter-spacing: 0.06em;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
 
   .badge {
-    padding: clamp(6px, 1vw, 10px) clamp(10px, 1.4vw, 14px);
+    padding: 8px 12px;
     border-radius: 999px;
     background: var(--accent-muted);
     color: var(--accent-strong);
     font-weight: 700;
-    font-size: clamp(0.85rem, 0.3vw + 0.7rem, 0.95rem);
+    font-size: 0.9rem;
     border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
   }
 
   .empty {
     margin: 0;
-    padding: clamp(12px, 2vw, 16px);
+    padding: 14px;
     background: var(--surface-muted);
-    border-radius: 12px;
+    border-radius: var(--radius-sm);
     border: 1px dashed var(--border);
     color: var(--muted);
   }
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(clamp(200px, 42vw, 260px), 1fr));
-    gap: clamp(10px, 1.2vw, 16px);
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
   }
 
   .card {
     border: 1px solid var(--border);
-    border-radius: clamp(12px, 1vw, 16px);
-    padding: clamp(12px, 1.5vw, 16px);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 85%, transparent), var(--surface));
+    border-radius: var(--radius);
+    padding: 14px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 88%, transparent), var(--surface));
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: clamp(10px, 1vw, 14px);
+    gap: 12px;
     text-align: left;
     cursor: pointer;
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.2s ease;
@@ -146,13 +146,13 @@
   .card:hover {
     transform: translateY(-2px);
     border-color: var(--accent);
-    box-shadow: 0 12px 24px color-mix(in srgb, var(--accent-strong) 25%, transparent);
+    box-shadow: 0 12px 22px color-mix(in srgb, var(--accent-strong) 24%, transparent);
   }
 
   .icon {
-    width: clamp(44px, 6vw, 54px);
-    height: clamp(44px, 6vw, 54px);
-    border-radius: clamp(12px, 1vw, 16px);
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
     display: grid;
     place-items: center;
     background: var(--card-contrast);
@@ -170,12 +170,12 @@
   .meta {
     display: flex;
     flex-direction: column;
-    gap: clamp(4px, 0.8vw, 8px);
+    gap: 4px;
     min-width: 0;
   }
 
   .meta strong {
-    font-size: clamp(1rem, 0.4vw + 0.9rem, 1.05rem);
+    font-size: 1rem;
     color: var(--text);
     white-space: nowrap;
     overflow: hidden;
@@ -184,13 +184,14 @@
 
   .meta span {
     color: var(--muted);
-    font-size: clamp(0.85rem, 0.3vw + 0.75rem, 0.95rem);
+    font-size: 0.9rem;
   }
 
   .chevron {
-    width: clamp(18px, 3vw, 22px);
-    height: clamp(18px, 3vw, 22px);
+    width: 20px;
+    height: 20px;
     color: var(--muted);
+    stroke-width: 1.6;
   }
 
   @media (max-width: 720px) {
