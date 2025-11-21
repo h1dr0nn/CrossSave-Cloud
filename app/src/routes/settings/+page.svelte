@@ -43,11 +43,7 @@ function goBack() {
       </svg>
       <span>Back</span>
     </button>
-    <div class="headline">
-      <p class="eyebrow">Preferences</p>
-      <h1>Settings</h1>
-      <p class="subtitle">Control theme and accessibility for CrossSave Cloud.</p>
-    </div>
+    <h1>Settings</h1>
   </header>
 
   <div class="panel">
@@ -56,13 +52,13 @@ function goBack() {
       <p class="helper">Pick a light or dark look, or follow your operating system.</p>
     </div>
     <div class="actions">
-      <button class="pill" on:click={setLight} aria-pressed={$themePreference === "light"}>
+      <button class="pill" class:active={$themePreference === "light"} on:click={setLight} aria-pressed={$themePreference === "light"}>
         <span>Light</span>
       </button>
-      <button class="pill" on:click={setDark} aria-pressed={$themePreference === "dark"}>
+      <button class="pill" class:active={$themePreference === "dark"} on:click={setDark} aria-pressed={$themePreference === "dark"}>
         <span>Dark</span>
       </button>
-      <button class="pill" on:click={useSystem} aria-pressed={$themePreference === "system"}>
+      <button class="pill" class:active={$themePreference === "system"} on:click={useSystem} aria-pressed={$themePreference === "system"}>
         System
       </button>
     </div>
@@ -75,35 +71,36 @@ function goBack() {
 
 <style>
   .settings {
-    padding: clamp(16px, 3vw, 28px);
+    padding: clamp(16px, 3vw, 32px);
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 18px;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
   }
 
   .settings-bar {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 12px;
+    display: flex;
     align-items: center;
-    padding: 14px 16px;
-    border-radius: var(--radius);
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 16px 18px;
+    border-radius: 18px;
     background: color-mix(in srgb, var(--surface) 94%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-    box-shadow: var(--shadow-soft);
+    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+    box-shadow: 0 12px 28px color-mix(in srgb, var(--shadow) 35%, transparent);
+    backdrop-filter: blur(16px);
   }
 
   .icon-button {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 14px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--surface);
+    padding: 11px 16px;
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+    background: linear-gradient(120deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface));
     cursor: pointer;
     color: var(--text);
     font-weight: 600;
@@ -121,22 +118,12 @@ function goBack() {
     height: 20px;
   }
 
-  .headline h1 {
-    margin: 6px 0 6px;
+  h1 {
+    flex: 1;
+    text-align: right;
+    margin: 0 0 0 auto;
     font-size: clamp(1.4rem, 0.8vw + 1.2rem, 1.8rem);
-  }
-
-  .eyebrow {
-    margin: 0;
-    font-size: 0.85rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-
-  .subtitle {
-    margin: 0;
-    color: var(--muted);
+    letter-spacing: -0.01em;
   }
 
   .panel {
@@ -177,7 +164,8 @@ function goBack() {
     transition: border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
   }
 
-  .pill[aria-pressed="true"] {
+  .pill[aria-pressed="true"],
+  .pill.active {
     border-color: var(--accent);
     box-shadow: 0 10px 18px color-mix(in srgb, var(--accent-strong) 20%, transparent);
     transform: translateY(-1px);
@@ -204,8 +192,13 @@ function goBack() {
 
   @media (max-width: 640px) {
     .settings-bar {
-      grid-template-columns: 1fr;
-      align-items: flex-start;
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    h1 {
+      text-align: left;
+      margin-left: 0;
     }
 
     .actions {
