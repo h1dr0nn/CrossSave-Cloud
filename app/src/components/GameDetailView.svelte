@@ -112,14 +112,20 @@
 </script>
 
 <section class="detail-shell">
-  <AppHeader
-    eyebrow="Game Detail"
-    title={gameName || "Game"}
-    showBack
-    onBack={goBack}
-    onMenu={() => {}}
-  >
-    <div slot="actions" class="header-actions">
+  <header class="detail-header">
+    <button class="icon-button" on:click={goBack} aria-label="Go back">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M14.5 6 8.5 12l6 6"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
+
+    <div class="header-actions">
       <button class="primary" on:click={packageNow} disabled={packaging}>
         {packaging ? "Packaging..." : "Package now"}
       </button>
@@ -127,7 +133,7 @@
         {reloading ? "Refreshing" : "Reload"}
       </button>
     </div>
-  </AppHeader>
+  </header>
 
   <div class="hero">
     <div class="icon" aria-hidden="true">{gameName.charAt(0) || "G"}</div>
@@ -210,6 +216,66 @@
     color: var(--text);
   }
 
+  .detail-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+    box-shadow: var(--shadow-soft);
+    min-width: 0;
+  }
+
+  .icon-button {
+    width: 40px;
+    height: 40px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: grid;
+    place-items: center;
+    color: var(--text);
+    box-shadow: var(--shadow-soft);
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.18s ease, opacity 0.16s ease,
+      border-color 0.18s ease;
+  }
+
+  .icon-button svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .icon-button:hover:not(:disabled),
+  .ghost:hover:not(:disabled),
+  .primary:hover:not(:disabled) {
+    opacity: 0.92;
+    border-color: var(--accent);
+    box-shadow: var(--shadow);
+  }
+
+  .icon-button:active:not(:disabled),
+  .ghost:active:not(:disabled),
+  .primary:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: clamp(8px, 1vw, 12px);
+    flex-wrap: nowrap;
+    min-width: 0;
+    margin-left: auto;
+  }
+
+  .header-actions button {
+    white-space: nowrap;
+    flex: 0 1 auto;
+  }
+
   .hero {
     background: color-mix(in srgb, var(--surface) 90%, transparent);
     border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
@@ -238,19 +304,6 @@
   .hero > * {
     position: relative;
     z-index: 1;
-  }
-
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: clamp(8px, 1vw, 12px);
-    flex-wrap: nowrap;
-    min-width: 0;
-  }
-
-  .header-actions button {
-    white-space: nowrap;
-    flex: 0 1 auto;
   }
 
   .icon {
@@ -296,6 +349,8 @@
     box-shadow: var(--shadow);
     cursor: pointer;
     min-width: clamp(120px, 14vw, 150px);
+    transition: transform 0.12s ease, box-shadow 0.18s ease, opacity 0.16s ease,
+      border-color 0.18s ease;
   }
 
   .primary:disabled {
@@ -310,6 +365,8 @@
     color: var(--text);
     border: 1px solid var(--border);
     cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.18s ease, opacity 0.16s ease,
+      border-color 0.18s ease;
   }
 
   .info-grid {
