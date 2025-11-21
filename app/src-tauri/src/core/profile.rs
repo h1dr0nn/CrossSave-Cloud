@@ -93,7 +93,7 @@ impl ProfileManager {
         Ok(guard.get(emulator_id).cloned())
     }
 
-    pub fn save_profile(&self, profile: EmulatorProfile) -> Result<EmulatorProfile, ProfileError> {
+    pub fn save_profile(&mut self, profile: EmulatorProfile) -> Result<EmulatorProfile, ProfileError> {
         Self::validate_profile(&profile)?;
         self.persist_profile(&profile)?;
         self.reload()?;
@@ -101,7 +101,7 @@ impl ProfileManager {
         Ok(profile)
     }
 
-    pub fn delete_profile(&self, emulator_id: &str) -> Result<(), ProfileError> {
+    pub fn delete_profile(&mut self, emulator_id: &str) -> Result<(), ProfileError> {
         let user_profile = self.user_dir.join(format!("{emulator_id}.json"));
         if user_profile.exists() {
             fs::remove_file(&user_profile).map_err(|err| ProfileError::Io(err.to_string()))?;

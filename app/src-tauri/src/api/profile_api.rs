@@ -36,7 +36,10 @@ pub async fn save_profile(
     state: tauri::State<'_, ProfileManager>,
     profile: EmulatorProfile,
 ) -> Result<EmulatorProfile, String> {
-    state.save_profile(profile).map_err(map_profile_error)
+    state
+        .write()
+        .save_profile(profile)
+        .map_err(map_profile_error)
 }
 
 #[tauri::command]
@@ -44,5 +47,8 @@ pub async fn delete_profile(
     state: tauri::State<'_, ProfileManager>,
     emulator_id: String,
 ) -> Result<(), String> {
-    state.delete_profile(&emulator_id).map_err(map_profile_error)
+    state
+        .write()
+        .delete_profile(&emulator_id)
+        .map_err(map_profile_error)
 }
