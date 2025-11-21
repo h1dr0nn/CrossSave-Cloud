@@ -72,8 +72,19 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -ms-overflow-style: none;
     transition: transform 0.25s ease, opacity 0.25s ease;
     z-index: 2;
+  }
+
+  aside::-webkit-scrollbar {
+    display: none;
+  }
+
+  aside {
+    scrollbar-width: none;
   }
 
   aside.drawer {

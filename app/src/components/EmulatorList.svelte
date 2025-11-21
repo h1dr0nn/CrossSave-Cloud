@@ -50,10 +50,8 @@
     display: flex;
     flex-direction: column;
     gap: clamp(6px, 1vw, 10px);
-    max-height: calc(100vh - clamp(110px, 14vw, 180px));
-    overflow-y: auto;
-    overflow-x: visible;
-    padding: clamp(12px, 2vw, 16px) clamp(2px, 0.6vw, 6px) clamp(2px, 0.6vw, 6px) 0;
+    overflow: visible;
+    padding: clamp(6px, 1.4vw, 12px) clamp(2px, 0.6vw, 6px) 6px 0;
   }
 
   button {

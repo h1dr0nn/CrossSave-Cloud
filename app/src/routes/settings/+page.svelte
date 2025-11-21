@@ -83,22 +83,24 @@ function goBack() {
   .settings-bar {
     display: flex;
     align-items: center;
-    gap: 14px;
-    flex-wrap: wrap;
-    padding: 16px 18px;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 16px;
     border-radius: 18px;
     background: color-mix(in srgb, var(--surface) 94%, transparent);
     border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
     box-shadow: 0 12px 28px color-mix(in srgb, var(--shadow) 35%, transparent);
     backdrop-filter: blur(16px);
+    width: 100%;
   }
 
   .icon-button {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 11px 16px;
-    border-radius: 12px;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 10px;
     border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
     background: linear-gradient(120deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface));
     cursor: pointer;
@@ -122,8 +124,12 @@ function goBack() {
     flex: 1;
     text-align: right;
     margin: 0 0 0 auto;
-    font-size: clamp(1.4rem, 0.8vw + 1.2rem, 1.8rem);
+    font-size: clamp(1.3rem, 0.7vw + 1.15rem, 1.7rem);
     letter-spacing: -0.01em;
+    white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .panel {
@@ -191,14 +197,8 @@ function goBack() {
   }
 
   @media (max-width: 640px) {
-    .settings-bar {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
     h1 {
-      text-align: left;
-      margin-left: 0;
+      font-size: 1.3rem;
     }
 
     .actions {
