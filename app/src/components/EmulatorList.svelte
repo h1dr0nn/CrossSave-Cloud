@@ -49,12 +49,13 @@
     gap: clamp(6px, 1vw, 10px);
     max-height: calc(100vh - clamp(110px, 14vw, 180px));
     overflow-y: auto;
-    padding-right: clamp(2px, 0.6vw, 6px);
+    padding: clamp(12px, 2vw, 16px) clamp(2px, 0.6vw, 6px) clamp(2px, 0.6vw, 6px) 0;
   }
 
   button {
-    border: 1px solid #e2e8f0;
-    background: rgba(248, 250, 252, 0.8);
+    position: relative;
+    border: 1px solid var(--border);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 90%, transparent), var(--surface));
     border-radius: 12px;
     padding: clamp(10px, 2vw, 14px);
     display: grid;
@@ -63,18 +64,33 @@
     align-items: center;
     text-align: left;
     cursor: pointer;
-    transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+    color: var(--text);
+  }
+
+  button::before {
+    content: "";
+    position: absolute;
+    inset: 6px auto 6px -3px;
+    width: 4px;
+    border-radius: 8px;
+    background: transparent;
+    transition: background 0.2s ease;
   }
 
   button.selected {
-    border-color: #38bdf8;
-    background: linear-gradient(120deg, #e0f2fe, #f8fafc);
-    box-shadow: 0 10px 20px rgba(14, 165, 233, 0.2);
+    border-color: var(--accent);
+    background: linear-gradient(120deg, color-mix(in srgb, var(--accent-muted) 80%, var(--surface) 20%), var(--surface));
+    box-shadow: 0 10px 20px color-mix(in srgb, var(--accent-strong) 28%, transparent);
     transform: translateY(-1px);
   }
 
+  button.selected::before {
+    background: var(--accent);
+  }
+
   button:hover {
-    border-color: #cbd5e1;
+    border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
   }
 
   .icon {
@@ -83,7 +99,8 @@
     border-radius: 12px;
     display: grid;
     place-items: center;
-    color: #0f172a;
+    color: var(--text);
+    background: var(--surface-muted);
   }
 
   .icon svg {
@@ -95,25 +112,30 @@
     display: flex;
     flex-direction: column;
     gap: clamp(4px, 0.8vw, 8px);
+    min-width: 0;
   }
 
   .text span {
     font-weight: 700;
     font-size: clamp(1rem, 0.5vw + 0.9rem, 1.05rem);
-    color: #0f172a;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .text small {
-    color: #475569;
+    color: var(--muted);
     font-size: clamp(0.8rem, 0.3vw + 0.7rem, 0.95rem);
+    display: block;
   }
 
   .empty {
     margin: 0;
     padding: clamp(12px, 2vw, 16px);
     border-radius: 12px;
-    background: #f8fafc;
-    border: 1px dashed #cbd5e1;
-    color: #475569;
+    background: var(--surface-muted);
+    border: 1px dashed var(--border);
+    color: var(--muted);
   }
 </style>

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
+
   import Sidebar from "./Sidebar.svelte";
   import GameList from "./GameList.svelte";
   import ProfilePreview from "./ProfilePreview.svelte";
@@ -64,6 +66,10 @@
   function toggleDrawer() {
     drawerOpen = !drawerOpen;
   }
+
+  function openSettings() {
+    goto("/settings");
+  }
 </script>
 
 <svelte:window bind:innerWidth={viewportWidth} />
@@ -85,16 +91,32 @@
         <p class="eyebrow">CrossSave Cloud</p>
         <h1>Universal save syncing, tuned for every screen size.</h1>
       </div>
-      {#if isMobile}
-        <button class="drawer-toggle" on:click={toggleDrawer} aria-label="Toggle emulator drawer">
+      <div class="actions">
+        <button class="settings" on:click={openSettings} aria-label="Open settings">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
-              d="M4 7.5h16a1 1 0 0 0 0-2H4a1 1 0 0 0 0 2Zm0 5h16a1 1 0 0 0 0-2H4a1 1 0 0 0 0 2Zm0 5h16a1 1 0 0 0 0-2H4a1 1 0 0 0 0 2Z"
-              fill="currentColor"
+              d="M10 3.5h4l.6 2.2a6.5 6.5 0 0 1 1.6.9l2.3-.6 2 3.4-1.7 1.6c.1.5.1 1 0 1.5l1.7 1.6-2 3.4-2.3-.6a6.5 6.5 0 0 1-1.6.9L14 20.5h-4l-.6-2.2a6.5 6.5 0 0 1-1.6-.9l-2.3.6-2-3.4 1.7-1.6a6.7 6.7 0 0 1 0-1.5L3.5 9.4l2-3.4 2.3.6a6.5 6.5 0 0 1 1.6-.9Z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
             />
+            <circle cx="12" cy="12" r="2.5" fill="currentColor" />
           </svg>
+          <span>Settings</span>
         </button>
-      {/if}
+        {#if isMobile}
+          <button class="drawer-toggle" on:click={toggleDrawer} aria-label="Toggle emulator drawer">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M4 7.5h16a1 1 0 0 0 0-2H4a1 1 0 0 0 0 2Zm0 5h16a1 1 0 0 0 0-2H4a1 1 0 0 0 0 2Zm0 5h16a1 1 0 0 0 0-2H4a1 1 0 0 0 0 2Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+        {/if}
+      </div>
     </div>
 
     <div class="content-grid">
@@ -109,7 +131,8 @@
     display: flex;
     min-height: 100vh;
     width: 100%;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(226, 232, 240, 0.75));
+    background: var(--bg);
+    color: var(--text);
   }
 
   .main {
@@ -128,8 +151,9 @@
     gap: clamp(10px, 2vw, 16px);
     padding: clamp(10px, 1.5vw, 16px) clamp(12px, 1.8vw, 18px);
     border-radius: clamp(10px, 1vw, 14px);
-    background: rgba(255, 255, 255, 0.85);
-    box-shadow: 0 10px 35px rgba(15, 23, 42, 0.08);
+    background: var(--surface);
+    box-shadow: var(--shadow-strong);
+    border: 1px solid var(--border);
   }
 
   .titles {
@@ -142,7 +166,7 @@
     margin: 0;
     font-size: clamp(1.25rem, 1.2vw + 1rem, 1.75rem);
     font-weight: 700;
-    color: #0f172a;
+    color: var(--text);
   }
 
   .eyebrow {
@@ -150,20 +174,56 @@
     font-size: clamp(0.8rem, 0.5vw + 0.6rem, 0.95rem);
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: #475569;
+    color: var(--muted);
     font-weight: 600;
   }
 
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: clamp(8px, 1vw, 12px);
+  }
+
+  .settings {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: clamp(8px, 1vw, 10px) clamp(10px, 1.4vw, 14px);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface-muted);
+    color: var(--text);
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  .settings:hover {
+    transform: translateY(-1px);
+    border-color: var(--accent);
+    box-shadow: var(--shadow-strong);
+  }
+
+  .settings svg {
+    width: clamp(18px, 4vw, 22px);
+    height: clamp(18px, 4vw, 22px);
+  }
+
+  .settings span {
+    font-weight: 700;
+    font-size: clamp(0.9rem, 0.4vw + 0.8rem, 1rem);
+  }
+
   .drawer-toggle {
-    border: 1px solid #cbd5e1;
-    background: #fff;
+    border: 1px solid var(--border);
+    background: var(--surface);
     border-radius: 12px;
     padding: clamp(8px, 1vw, 10px);
     display: grid;
     place-items: center;
     cursor: pointer;
-    color: #0f172a;
-    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+    color: var(--text);
+    box-shadow: var(--shadow);
   }
 
   .drawer-toggle svg {

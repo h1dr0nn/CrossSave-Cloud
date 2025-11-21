@@ -32,7 +32,7 @@
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path
           d="M6.5 3.5h11a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Zm0 2v13h11v-13Z"
-          fill="#0f172a"
+          fill="currentColor"
         />
         <circle cx="9" cy="9" r="1" fill="#10b981" />
         <circle cx="15" cy="9" r="1" fill="#10b981" />
@@ -45,7 +45,7 @@
     {#if isMobile}
       <button class="close" on:click={close} aria-label="Close emulator drawer">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M6 6l12 12m0-12L6 18" stroke="#0f172a" stroke-width="2" stroke-linecap="round" />
+          <path d="M6 6l12 12m0-12L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
         </svg>
       </button>
     {/if}
@@ -60,10 +60,10 @@
     width: clamp(180px, 22vw, 260px);
     min-width: clamp(180px, 20vw, 240px);
     max-width: 260px;
-    background: rgba(255, 255, 255, 0.95);
+    background: var(--surface);
     backdrop-filter: blur(6px);
-    border-right: 1px solid #e2e8f0;
-    box-shadow: 6px 0 24px rgba(15, 23, 42, 0.08);
+    border-right: 1px solid var(--border);
+    box-shadow: 6px 0 24px var(--shadow);
     padding: clamp(12px, 1.8vw, 18px);
     display: flex;
     flex-direction: column;
@@ -73,22 +73,27 @@
 
   aside.drawer {
     position: fixed;
-    inset: 0 auto 0 0;
-    transform: translateX(-100%);
-    max-width: clamp(200px, 60vw, 280px);
+    inset: 0 0 auto 0;
+    transform: translateY(-105%);
+    max-width: none;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 16px 32px var(--shadow);
     z-index: 40;
-    height: 100vh;
+    height: auto;
+    background: var(--surface);
   }
 
   aside.drawer.selected {
-    transform: translateX(0);
+    transform: translateY(0);
     opacity: 1;
   }
 
   .overlay {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.35);
+    background: var(--overlay);
     z-index: 30;
   }
 
@@ -109,26 +114,28 @@
   .title svg {
     width: clamp(32px, 5vw, 40px);
     height: clamp(32px, 5vw, 40px);
+    color: var(--text);
   }
 
   .title p {
     margin: 0;
     font-size: clamp(1rem, 0.5vw + 0.9rem, 1.1rem);
     font-weight: 700;
-    color: #0f172a;
+    color: var(--text);
   }
 
   .title small {
-    color: #475569;
+    color: var(--muted);
     font-size: clamp(0.8rem, 0.4vw + 0.65rem, 0.95rem);
   }
 
   .close {
-    background: #e2e8f0;
-    border: none;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
     border-radius: 10px;
     padding: clamp(6px, 1vw, 8px);
     cursor: pointer;
+    color: var(--text);
   }
 
   .close svg {
