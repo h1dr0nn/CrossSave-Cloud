@@ -1,21 +1,16 @@
 use std::{
-    env, fs,
+    collections::HashMap,
+    fs,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::Mutex,
 };
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{debug, info, warn};
 
-static PROFILES: OnceLock<Vec<EmulatorProfile>> = OnceLock::new();
-
 #[derive(Debug, Error)]
 pub enum ProfileError {
-    #[error("profiles already loaded")]
-    ProfilesAlreadyLoaded,
-    #[error("profiles not loaded")]
-    ProfilesNotLoaded,
     #[error("profiles directory missing at {0}")]
     ProfilesDirectoryMissing(String),
     #[error("failed to read profiles directory {0}: {1}")]
@@ -26,14 +21,12 @@ pub enum ProfileError {
     ProfileParse(String, String),
     #[error("home directory not found for path {0}")]
     HomeDirectoryUnavailable(String),
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct RawEmulatorProfile {
-    emulator_id: String,
-    name: String,
-    default_save_paths: Vec<String>,
-    file_patterns: Vec<String>,
+    #[error("invalid profile: {0}")]
+    InvalidProfile(String),
+    #[error("io error: {0}")]
+    Io(String),
+    #[error("lock error: {0}")]
+    Lock(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -44,113 +37,219 @@ pub struct EmulatorProfile {
     pub file_patterns: Vec<String>,
 }
 
-pub fn load_profiles() -> Result<(), ProfileError> {
-    if PROFILES.get().is_some() {
-        return Err(ProfileError::ProfilesAlreadyLoaded);
-    }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct RawEmulatorProfile {
+    emulator_id: String,
+    name: String,
+    default_save_paths: Vec<String>,
+    file_patterns: Vec<String>,
+}
 
-    let profiles_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("resources")
-        .join("profiles");
+#[derive(Debug)]
+pub struct ProfileManager {
+    default_dir: PathBuf,
+    user_dir: PathBuf,
+    cache: Mutex<HashMap<String, EmulatorProfile>>,
+}
 
-    if !profiles_dir.exists() {
-        return Err(ProfileError::ProfilesDirectoryMissing(
-            profiles_dir.display().to_string(),
-        ));
-    }
-
-    let entries = fs::read_dir(&profiles_dir).map_err(|err| {
-        ProfileError::ProfilesDirectoryRead(profiles_dir.display().to_string(), err.to_string())
-    })?;
-
-    let mut profiles: Vec<EmulatorProfile> = Vec::new();
-
-    for entry in entries {
-        let entry = entry.map_err(|err| {
-            ProfileError::ProfilesDirectoryRead(profiles_dir.display().to_string(), err.to_string())
-        })?;
-        let path = entry.path();
-
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-            continue;
+impl ProfileManager {
+    pub fn new(default_dir: PathBuf, user_dir: PathBuf) -> Result<Self, ProfileError> {
+        if !default_dir.exists() {
+            return Err(ProfileError::ProfilesDirectoryMissing(
+                default_dir.display().to_string(),
+            ));
         }
 
-        debug!("[PROFILE] Loading profile from {:?}", path);
-
-        let content = fs::read_to_string(&path).map_err(|err| {
-            ProfileError::ProfileFileRead(path.display().to_string(), err.to_string())
-        })?;
-
-        let raw_profile: RawEmulatorProfile = serde_json::from_str(&content).map_err(|err| {
-            ProfileError::ProfileParse(path.display().to_string(), err.to_string())
-        })?;
-
-        let validated_paths = normalize_paths(&raw_profile.default_save_paths)?;
-
-        profiles.push(EmulatorProfile {
-            emulator_id: raw_profile.emulator_id,
-            name: raw_profile.name,
-            default_save_paths: validated_paths,
-            file_patterns: raw_profile.file_patterns,
-        });
-    }
-
-    PROFILES
-        .set(profiles)
-        .map_err(|_| ProfileError::ProfilesAlreadyLoaded)?;
-
-    if let Some(loaded) = PROFILES.get() {
-        info!("[PROFILE] Loaded {} emulator profiles", loaded.len());
-    }
-
-    Ok(())
-}
-
-pub fn get_profiles() -> Result<Vec<EmulatorProfile>, ProfileError> {
-    match PROFILES.get() {
-        Some(profiles) => Ok(profiles.clone()),
-        None => Err(ProfileError::ProfilesNotLoaded),
-    }
-}
-
-pub fn get_profile_by_id(emulator_id: &str) -> Result<Option<EmulatorProfile>, ProfileError> {
-    let profiles = PROFILES.get().ok_or(ProfileError::ProfilesNotLoaded)?;
-    Ok(profiles
-        .iter()
-        .find(|profile| profile.emulator_id == emulator_id)
-        .cloned())
-}
-
-fn normalize_paths(paths: &[String]) -> Result<Vec<String>, ProfileError> {
-    let mut validated: Vec<String> = Vec::new();
-
-    for path in paths {
-        let expanded = expand_home(path)?;
-
-        match fs::metadata(&expanded) {
-            Ok(_) => validated.push(expanded.to_string_lossy().to_string()),
-            Err(err) => warn!(
-                "[PROFILE] Skipping path {:?} - validation failed: {}",
-                expanded, err
-            ),
+        if let Some(parent) = user_dir.parent() {
+            fs::create_dir_all(parent).map_err(|err| ProfileError::Io(err.to_string()))?;
         }
-    }
+        fs::create_dir_all(&user_dir).map_err(|err| ProfileError::Io(err.to_string()))?;
 
-    Ok(validated)
-}
-
-fn expand_home(path: &str) -> Result<PathBuf, ProfileError> {
-    if path == "~" || path.starts_with("~/") {
-        let home = env::var("HOME")
-            .map_err(|_| ProfileError::HomeDirectoryUnavailable(path.to_string()))?;
-        let suffix = path.trim_start_matches('~').trim_start_matches('/');
-        let expanded = if suffix.is_empty() {
-            PathBuf::from(home)
-        } else {
-            Path::new(&home).join(suffix)
+        let mut manager = Self {
+            default_dir,
+            user_dir,
+            cache: Mutex::new(HashMap::new()),
         };
-        Ok(expanded)
-    } else {
-        Ok(PathBuf::from(path))
+
+        manager.reload()?;
+        Ok(manager)
     }
+
+    pub fn list_profiles(&self) -> Result<Vec<EmulatorProfile>, ProfileError> {
+        let guard = self
+            .cache
+            .lock()
+            .map_err(|err| ProfileError::Lock(err.to_string()))?;
+        let mut profiles: Vec<EmulatorProfile> = guard.values().cloned().collect();
+        profiles.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(profiles)
+    }
+
+    pub fn get_profile(&self, emulator_id: &str) -> Result<Option<EmulatorProfile>, ProfileError> {
+        let guard = self
+            .cache
+            .lock()
+            .map_err(|err| ProfileError::Lock(err.to_string()))?;
+        Ok(guard.get(emulator_id).cloned())
+    }
+
+    pub fn save_profile(&mut self, profile: EmulatorProfile) -> Result<EmulatorProfile, ProfileError> {
+        Self::validate_profile(&profile)?;
+        self.persist_profile(&profile)?;
+        self.reload()?;
+        info!("[PROFILE] Saved profile {}", profile.emulator_id);
+        Ok(profile)
+    }
+
+    pub fn delete_profile(&mut self, emulator_id: &str) -> Result<(), ProfileError> {
+        let user_profile = self.user_dir.join(format!("{emulator_id}.json"));
+        if user_profile.exists() {
+            fs::remove_file(&user_profile).map_err(|err| ProfileError::Io(err.to_string()))?;
+            info!("[PROFILE] Deleted user profile {emulator_id}");
+        } else {
+            return Err(ProfileError::InvalidProfile(format!(
+                "profile {emulator_id} is read-only"
+            )));
+        }
+
+        self.reload()?;
+        Ok(())
+    }
+
+    fn reload(&mut self) -> Result<(), ProfileError> {
+        let mut merged: HashMap<String, EmulatorProfile> = HashMap::new();
+        let default_profiles = self.load_dir(&self.default_dir)?;
+        for profile in default_profiles {
+            merged.insert(profile.emulator_id.clone(), profile);
+        }
+
+        let user_profiles = self.load_dir(&self.user_dir)?;
+        for profile in user_profiles {
+            merged.insert(profile.emulator_id.clone(), profile);
+        }
+
+        let mut guard = self
+            .cache
+            .lock()
+            .map_err(|err| ProfileError::Lock(err.to_string()))?;
+        *guard = merged;
+        Ok(())
+    }
+
+    fn load_dir(&self, dir: &Path) -> Result<Vec<EmulatorProfile>, ProfileError> {
+        if !dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let entries = fs::read_dir(dir).map_err(|err| {
+            ProfileError::ProfilesDirectoryRead(dir.display().to_string(), err.to_string())
+        })?;
+
+        let mut profiles: Vec<EmulatorProfile> = Vec::new();
+
+        for entry in entries {
+            let entry = entry.map_err(|err| {
+                ProfileError::ProfilesDirectoryRead(dir.display().to_string(), err.to_string())
+            })?;
+            let path = entry.path();
+
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+
+            debug!("[PROFILE] Loading profile from {:?}", path);
+
+            let content = fs::read_to_string(&path).map_err(|err| {
+                ProfileError::ProfileFileRead(path.display().to_string(), err.to_string())
+            })?;
+
+            let raw_profile: RawEmulatorProfile = serde_json::from_str(&content).map_err(|err| {
+                ProfileError::ProfileParse(path.display().to_string(), err.to_string())
+            })?;
+
+            let normalized_paths = self.normalize_paths(&raw_profile.default_save_paths)?;
+
+            profiles.push(EmulatorProfile {
+                emulator_id: raw_profile.emulator_id,
+                name: raw_profile.name,
+                default_save_paths: normalized_paths,
+                file_patterns: raw_profile.file_patterns,
+            });
+        }
+
+        Ok(profiles)
+    }
+
+    fn persist_profile(&self, profile: &EmulatorProfile) -> Result<(), ProfileError> {
+        let raw = RawEmulatorProfile {
+            emulator_id: profile.emulator_id.clone(),
+            name: profile.name.clone(),
+            default_save_paths: profile.default_save_paths.clone(),
+            file_patterns: profile.file_patterns.clone(),
+        };
+
+        let json = serde_json::to_string_pretty(&raw)
+            .map_err(|err| ProfileError::ProfileParse("serialize".into(), err.to_string()))?;
+        let destination = self.user_dir.join(format!("{}.json", profile.emulator_id));
+        fs::write(&destination, json).map_err(|err| ProfileError::Io(err.to_string()))?;
+        Ok(())
+    }
+
+    fn normalize_paths(&self, paths: &[String]) -> Result<Vec<String>, ProfileError> {
+        let mut validated: Vec<String> = Vec::new();
+
+        for path in paths {
+            let expanded = self.expand_home(path)?;
+            validated.push(expanded.to_string_lossy().to_string());
+        }
+
+        Ok(validated)
+    }
+
+    fn expand_home(&self, path: &str) -> Result<PathBuf, ProfileError> {
+        if path == "~" || path.starts_with("~/") {
+            let home = std::env::var("HOME")
+                .map_err(|_| ProfileError::HomeDirectoryUnavailable(path.to_string()))?;
+            let suffix = path.trim_start_matches('~').trim_start_matches('/');
+            let expanded = if suffix.is_empty() {
+                PathBuf::from(home)
+            } else {
+                Path::new(&home).join(suffix)
+            };
+            Ok(expanded)
+        } else {
+            Ok(PathBuf::from(path))
+        }
+    }
+
+    fn validate_profile(profile: &EmulatorProfile) -> Result<(), ProfileError> {
+        if profile.name.trim().is_empty() {
+            return Err(ProfileError::InvalidProfile("name cannot be empty".into()));
+        }
+
+        if profile.emulator_id.trim().is_empty() {
+            return Err(ProfileError::InvalidProfile(
+                "emulator_id cannot be empty".into(),
+            ));
+        }
+
+        if profile.default_save_paths.is_empty() {
+            return Err(ProfileError::InvalidProfile(
+                "default_save_paths cannot be empty".into(),
+            ));
+        }
+
+        if profile.file_patterns.is_empty() {
+            return Err(ProfileError::InvalidProfile("file_patterns cannot be empty".into()));
+        }
+
+        Ok(())
+    }
+}
+
+pub fn default_profile_dirs() -> (PathBuf, PathBuf) {
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let default_dir = base.join("resources").join("profiles");
+    let user_dir = base.join("data").join("profiles");
+    (default_dir, user_dir)
 }
