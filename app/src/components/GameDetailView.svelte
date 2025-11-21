@@ -5,6 +5,7 @@
   import RecentHistory from "./RecentHistory.svelte";
   import { listHistory, packageGame, type HistoryEntry } from "../lib/api";
   import { pushError, pushInfo } from "../lib/notifications";
+  import { goto } from "$app/navigation";
 
   export let gameId: string;
 
@@ -52,6 +53,11 @@
 
   function shortHash(hash: string) {
     return hash?.slice(0, 8) ?? "";
+  }
+
+  function goBack() {
+    drawerOpen = false;
+    goto("/", { keepFocus: true, noScroll: true });
   }
 
   async function loadHistory() {
@@ -105,6 +111,14 @@
 </script>
 
 <section class="detail-shell">
+  <div class="page-header">
+    <button class="icon-button" on:click={goBack} aria-label="Go back">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14.5 6 8.5 12l6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      </svg>
+    </button>
+  </div>
+
   <div class="hero">
     <div class="icon" aria-hidden="true">{gameName.charAt(0) || "G"}</div>
     <div class="heading">
@@ -204,6 +218,37 @@
     gap: 14px;
     align-items: center;
     box-shadow: var(--shadow-soft);
+  }
+
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .icon-button {
+    width: 40px;
+    height: 40px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: grid;
+    place-items: center;
+    color: var(--text);
+    box-shadow: var(--shadow-soft);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  .icon-button:hover {
+    transform: translateY(-1px);
+    border-color: var(--accent);
+    box-shadow: var(--shadow);
+  }
+
+  .icon-button svg {
+    width: 22px;
+    height: 22px;
   }
 
   .icon {
