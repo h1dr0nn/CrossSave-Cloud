@@ -5,12 +5,15 @@ import { goto } from "$app/navigation";
 import Sidebar from "./Sidebar.svelte";
 import GameList from "./GameList.svelte";
 import ProfilePreview from "./ProfilePreview.svelte";
+import AppHeader from "./AppHeader.svelte";
 import type { GameEntry } from "../lib/uiTypes";
 import { listProfiles, type EmulatorProfile } from "../lib/api";
 
 const cachedProfiles: EmulatorProfile[] = [];
 const cachedGames = new Map<string, GameEntry[]>();
 let cachedSelectedEmulatorId: string | null = null;
+
+const DESKTOP_BREAKPOINT = 900;
 
 let profiles: EmulatorProfile[] = [];
 let selectedEmulatorId: string | null = null;
@@ -44,8 +47,13 @@ onMount(async () => {
 });
 
 $: selectedProfile = profiles.find((p) => p.emulator_id === selectedEmulatorId) ?? null;
-$: isMobile = viewportWidth < 720;
+$: isDrawerMode = viewportWidth < DESKTOP_BREAKPOINT;
+$: sidebarVisible = drawerOpen || !isDrawerMode;
 $: selectedGames = selectedEmulatorId ? cachedGames.get(selectedEmulatorId) ?? [] : [];
+
+$: if (!isDrawerMode && drawerOpen) {
+  drawerOpen = false;
+}
 
 function preloadGames(items: EmulatorProfile[]) {
   items.forEach((profile) => {
@@ -70,7 +78,7 @@ function generateGames(profile: EmulatorProfile): GameEntry[] {
 function selectEmulator(id: string) {
   selectedEmulatorId = id;
   cachedSelectedEmulatorId = id;
-  if (isMobile) {
+  if (isDrawerMode) {
     drawerOpen = false;
   }
 }
@@ -86,12 +94,12 @@ function openSettings() {
 
 <svelte:window bind:innerWidth={viewportWidth} />
 
-<div class="shell" data-mobile={isMobile}>
+<div class="shell" data-mobile={isDrawerMode}>
   <Sidebar
     emulators={profiles}
     selectedId={selectedEmulatorId}
-    isMobile={isMobile}
-    open={drawerOpen || !isMobile}
+    isMobile={isDrawerMode}
+    open={sidebarVisible}
     loading={loadingProfiles}
     on:select={(event) => selectEmulator(event.detail)}
     on:close={() => (drawerOpen = false)}
@@ -99,21 +107,13 @@ function openSettings() {
 
   <div class="content">
     <div class="content-surface">
-      <header class="app-header">
-        <div class="leading">
-          {#if isMobile}
-            <button class="icon-button" on:click={toggleDrawer} aria-label="Toggle emulator drawer">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-              </svg>
-            </button>
-          {/if}
-          <div class="titles">
-            <p class="eyebrow">CrossSave Cloud</p>
-            <h1>Dashboard</h1>
-          </div>
-        </div>
-        <button class="icon-button primary" on:click={openSettings} aria-label="Open settings">
+      <AppHeader
+        eyebrow="CrossSave Cloud"
+        title="Dashboard"
+        showMenu={isDrawerMode}
+        onMenu={toggleDrawer}
+      >
+        <button slot="actions" class="icon-button primary" on:click={openSettings} aria-label="Open settings">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M10.75 3.5h2.5l.58 2.25a5 5 0 0 1 1.4.82L17.5 6l1.75 2.76-1.72 1.26c.06.3.09.62.09.94 0 .32-.03.63-.09.93l1.72 1.27L17.5 16l-2.27-.57a5 5 0 0 1-1.4.82l-.58 2.25h-2.5l-.58-2.25a5 5 0 0 1-1.4-.82L6.5 16l-1.75-2.76 1.72-1.27A5 5 0 0 1 6.38 11c0-.32.03-.63.09-.93L4.75 8.76 6.5 6l2.27.57a5 5 0 0 1 1.4-.82Z"
@@ -126,7 +126,7 @@ function openSettings() {
             <circle cx="12" cy="12" r="2.5" fill="currentColor" />
           </svg>
         </button>
-      </header>
+      </AppHeader>
 
       <main class="content-body">
         <div class="content-grid">
@@ -161,59 +161,15 @@ function openSettings() {
   }
 
   .content-surface {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: auto 1fr;
     max-width: 1360px;
     margin: 0 auto;
     width: 100%;
     height: 100vh;
     padding: clamp(16px, 2.5vw, 32px);
     gap: 14px;
-  }
-
-  .app-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 14px 18px;
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--surface) 92%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
-    box-shadow: var(--shadow-soft);
-    backdrop-filter: blur(16px);
-    position: sticky;
-    top: 0;
-    z-index: 12;
-  }
-
-  .leading {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .titles {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: clamp(1.2rem, 0.5vw + 1.05rem, 1.6rem);
-    font-weight: 700;
-    color: var(--text);
-    letter-spacing: -0.02em;
-  }
-
-  .eyebrow {
-    margin: 0;
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: var(--muted);
-    font-weight: 600;
+    overflow: hidden;
   }
 
   .icon-button {
@@ -272,13 +228,7 @@ function openSettings() {
     min-height: 0;
   }
 
-  @media (min-width: 780px) {
-    .content-grid {
-      grid-template-columns: minmax(360px, 1.1fr) minmax(320px, 1fr);
-    }
-  }
-
-  @media (max-width: 760px) {
+  @media (max-width: 899px) {
     .shell {
       grid-template-columns: 1fr;
     }

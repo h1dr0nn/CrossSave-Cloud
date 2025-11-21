@@ -1,3 +1,4 @@
+import { tick } from "svelte";
 import { writable } from "svelte/store";
 
 type Theme = "light" | "dark";
@@ -13,10 +14,16 @@ function getSystemTheme(): Theme {
 
 function getInitialPreference(): ThemePreference {
   if (!isBrowser) return "light";
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "light" || stored === "dark" || stored === "system") {
-    return stored;
+
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === "light" || stored === "dark" || stored === "system") {
+      return stored;
+    }
+  } catch (error) {
+    console.warn("Unable to read theme preference", error);
   }
+
   return "system";
 }
 
@@ -27,15 +34,18 @@ function createThemeStore() {
   const preferenceStore = writable<ThemePreference>(initialPreference);
   const activeThemeStore = writable<Theme>(initialTheme);
 
-  function applyTheme(preference: ThemePreference) {
+  async function applyTheme(preference: ThemePreference) {
     if (!isBrowser) return;
+    await tick();
     const theme = preference === "system" ? getSystemTheme() : preference;
     document.body.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
     activeThemeStore.set(theme);
   }
 
-  applyTheme(initialPreference);
+  if (isBrowser) {
+    void applyTheme(initialPreference);
+  }
   const mediaQuery = isBrowser ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 
   const handleSystemChange = (event: MediaQueryListEvent) => {
@@ -52,9 +62,14 @@ function createThemeStore() {
 
   preferenceStore.subscribe((value) => {
     if (isBrowser) {
-      localStorage.setItem(STORAGE_KEY, value);
+      try {
+        localStorage.setItem(STORAGE_KEY, value);
+      } catch (error) {
+        console.warn("Unable to store theme preference", error);
+      }
+
+      void applyTheme(value);
     }
-    applyTheme(value);
   });
 
   function setTheme(theme: ThemePreference) {

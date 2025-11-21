@@ -70,8 +70,8 @@
     padding: 12px;
     background: transparent;
     border-right: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-    z-index: 2;
-    overflow: visible;
+    z-index: 6;
+    overflow: hidden;
   }
 
   .sidebar-surface {
@@ -114,9 +114,9 @@
   .overlay {
     position: fixed;
     inset: 0;
-    background: var(--overlay);
-    z-index: 30;
-    backdrop-filter: blur(4px);
+    background: color-mix(in srgb, var(--overlay) 85%, transparent);
+    z-index: 40;
+    backdrop-filter: blur(1px);
   }
 
   .sidebar-header {
@@ -170,7 +170,8 @@
   .list-shell {
     flex: 1;
     min-height: 0;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     padding-right: 4px;
     scrollbar-width: none;
   }
