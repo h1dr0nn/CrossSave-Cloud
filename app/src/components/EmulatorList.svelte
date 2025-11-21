@@ -95,16 +95,6 @@
     z-index: 1;
   }
 
-  .button-surface::before {
-    content: "";
-    position: absolute;
-    inset: 6px auto 6px -3px;
-    width: 4px;
-    border-radius: 8px;
-    background: transparent;
-    transition: background 0.2s ease;
-  }
-
   button.selected {
     transform: none;
   }
@@ -114,10 +104,6 @@
     background: linear-gradient(120deg, color-mix(in srgb, var(--accent-muted) 80%, var(--surface) 20%), var(--surface));
     box-shadow: 0 10px 20px color-mix(in srgb, var(--accent-strong) 28%, transparent);
     transform: translateY(-1px);
-  }
-
-  button.selected .button-surface::before {
-    background: var(--accent);
   }
 
   button:hover .button-surface {
