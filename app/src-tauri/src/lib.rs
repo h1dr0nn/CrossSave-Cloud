@@ -4,13 +4,16 @@ mod core;
 use api::history_api::{delete_history_item, get_history_item, list_history, rollback_version};
 use api::packager_api::{package_save, validate_paths};
 use api::profile_api::{delete_profile, get_profile, list_profiles, save_profile};
-use api::settings_api::{clear_history_cache, get_app_settings, get_storage_info, update_app_settings};
+use api::settings_api::{
+    clear_history_cache, get_app_settings, get_storage_info, update_app_settings,
+};
 use api::watcher_api::{start_watcher, stop_watcher};
 use core::history::HistoryManager;
 use core::profile::{default_profile_dirs, ProfileManager};
 use core::settings::{default_settings_path, SettingsManager};
 use core::watcher::WatcherManager;
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -59,7 +62,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(WatcherManager::default())
         .manage(history_manager)
-        .manage(profile_manager)
+        .manage(Arc::new(RwLock::new(profile_manager)))
         .manage(settings_manager)
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![

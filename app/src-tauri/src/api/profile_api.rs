@@ -1,3 +1,5 @@
+use std::sync::{Arc, RwLock};
+
 use tracing::{info, warn};
 
 use crate::core::profile::{EmulatorProfile, ProfileError, ProfileManager};
@@ -8,21 +10,21 @@ fn map_profile_error(err: ProfileError) -> String {
 
 #[tauri::command]
 pub async fn list_profiles(
-    state: tauri::State<'_, ProfileManager>,
+    state: tauri::State<'_, Arc<RwLock<ProfileManager>>>,
 ) -> Result<Vec<EmulatorProfile>, String> {
-    let profiles = state.list_profiles().map_err(map_profile_error)?;
+    let mgr = state.read().unwrap();
+    let profiles = mgr.list_profiles().map_err(map_profile_error)?;
     info!("[PROFILE] Returning {} profiles", profiles.len());
     Ok(profiles)
 }
 
 #[tauri::command]
 pub async fn get_profile(
-    state: tauri::State<'_, ProfileManager>,
+    state: tauri::State<'_, Arc<RwLock<ProfileManager>>>,
     emulator_id: String,
 ) -> Result<Option<EmulatorProfile>, String> {
-    let profile = state
-        .get_profile(&emulator_id)
-        .map_err(map_profile_error)?;
+    let mgr = state.read().unwrap();
+    let profile = mgr.get_profile(&emulator_id).map_err(map_profile_error)?;
 
     if profile.is_none() {
         warn!("[PROFILE] Requested unknown emulator_id: {emulator_id}");
@@ -33,22 +35,18 @@ pub async fn get_profile(
 
 #[tauri::command]
 pub async fn save_profile(
-    state: tauri::State<'_, ProfileManager>,
+    state: tauri::State<'_, Arc<RwLock<ProfileManager>>>,
     profile: EmulatorProfile,
 ) -> Result<EmulatorProfile, String> {
-    state
-        .write()
-        .save_profile(profile)
-        .map_err(map_profile_error)
+    let mut mgr = state.write().unwrap();
+    mgr.save_profile(profile).map_err(map_profile_error)
 }
 
 #[tauri::command]
 pub async fn delete_profile(
-    state: tauri::State<'_, ProfileManager>,
+    state: tauri::State<'_, Arc<RwLock<ProfileManager>>>,
     emulator_id: String,
 ) -> Result<(), String> {
-    state
-        .write()
-        .delete_profile(&emulator_id)
-        .map_err(map_profile_error)
+    let mut mgr = state.write().unwrap();
+    mgr.delete_profile(&emulator_id).map_err(map_profile_error)
 }
