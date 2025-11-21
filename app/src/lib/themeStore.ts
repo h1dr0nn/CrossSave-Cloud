@@ -1,6 +1,7 @@
 import { writable } from "svelte/store";
 
 type Theme = "light" | "dark";
+type ThemePreference = Theme | "system";
 
 const STORAGE_KEY = "ui-theme";
 const isBrowser = typeof window !== "undefined";
@@ -10,72 +11,75 @@ function getSystemTheme(): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function getInitialTheme(): Theme {
+function getInitialPreference(): ThemePreference {
   if (!isBrowser) return "light";
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "light" || stored === "dark") {
+  if (stored === "light" || stored === "dark" || stored === "system") {
     return stored;
   }
-  return getSystemTheme();
-}
-
-function applyTheme(theme: Theme) {
-  if (!isBrowser) return;
-  const body = document.body;
-  body.classList.remove("theme-light", "theme-dark");
-  body.classList.add(`theme-${theme}`);
+  return "system";
 }
 
 function createThemeStore() {
-  const initial = getInitialTheme();
-  applyTheme(initial);
+  const initialPreference = getInitialPreference();
+  const initialTheme = initialPreference === "system" ? getSystemTheme() : initialPreference;
 
-  const { subscribe, set, update } = writable<Theme>(initial);
+  const preferenceStore = writable<ThemePreference>(initialPreference);
+  const activeThemeStore = writable<Theme>(initialTheme);
 
+  function applyTheme(preference: ThemePreference) {
+    if (!isBrowser) return;
+    const theme = preference === "system" ? getSystemTheme() : preference;
+    document.body.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    activeThemeStore.set(theme);
+  }
+
+  applyTheme(initialPreference);
   const mediaQuery = isBrowser ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
   const handleSystemChange = (event: MediaQueryListEvent) => {
-    const stored = isBrowser ? localStorage.getItem(STORAGE_KEY) : null;
-    if (stored === "light" || stored === "dark") return;
-    const nextTheme: Theme = event.matches ? "dark" : "light";
-    applyTheme(nextTheme);
-    set(nextTheme);
+    preferenceStore.update((current) => {
+      if (current !== "system") return current;
+      applyTheme(event.matches ? "dark" : "light");
+      return current;
+    });
   };
 
   if (mediaQuery) {
     mediaQuery.addEventListener("change", handleSystemChange);
   }
 
-  subscribe((value) => applyTheme(value));
-
-  function setTheme(theme: Theme) {
+  preferenceStore.subscribe((value) => {
     if (isBrowser) {
-      localStorage.setItem(STORAGE_KEY, theme);
+      localStorage.setItem(STORAGE_KEY, value);
     }
-    applyTheme(theme);
-    set(theme);
+    applyTheme(value);
+  });
+
+  function setTheme(theme: ThemePreference) {
+    preferenceStore.set(theme);
   }
 
   function toggleTheme() {
-    update((current) => {
+    preferenceStore.update((current) => {
       const next = current === "dark" ? "light" : "dark";
-      if (isBrowser) {
-        localStorage.setItem(STORAGE_KEY, next);
-      }
-      applyTheme(next);
       return next;
     });
   }
 
   function useSystemTheme() {
-    if (isBrowser) {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-    const next = getSystemTheme();
-    applyTheme(next);
-    set(next);
+    preferenceStore.set("system");
   }
 
-  return { subscribe, setTheme, toggleTheme, useSystemTheme };
+  return {
+    subscribe: preferenceStore.subscribe,
+    setTheme,
+    toggleTheme,
+    useSystemTheme,
+    preference: preferenceStore,
+    activeTheme: activeThemeStore
+  };
 }
 
 export const theme = createThemeStore();

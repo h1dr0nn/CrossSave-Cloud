@@ -74,14 +74,14 @@
 
 <style>
   .panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: clamp(12px, 1vw, 16px);
-    padding: clamp(14px, 2vw, 20px);
-    box-shadow: var(--shadow-strong);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface));
+    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow-soft);
     display: flex;
     flex-direction: column;
-    gap: clamp(12px, 1.2vw, 18px);
+    gap: 14px;
     min-height: 0;
     color: var(--text);
   }
@@ -95,24 +95,24 @@
 
   h2 {
     margin: 2px 0 0;
-    font-size: clamp(1.2rem, 0.8vw + 1rem, 1.45rem);
+    font-size: clamp(1.1rem, 0.7vw + 1rem, 1.35rem);
     color: var(--text);
   }
 
   .eyebrow {
     margin: 0;
     color: var(--muted);
-    font-size: clamp(0.85rem, 0.3vw + 0.75rem, 0.95rem);
-    letter-spacing: 0.06em;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
 
   .open {
     display: inline-flex;
     align-items: center;
-    gap: clamp(6px, 1vw, 10px);
-    padding: clamp(10px, 1.2vw, 14px) clamp(12px, 1.6vw, 16px);
-    border-radius: clamp(10px, 1vw, 14px);
+    gap: 8px;
+    padding: 12px 14px;
+    border-radius: 14px;
     border: 1px solid var(--accent);
     background: linear-gradient(120deg, var(--accent-strong), var(--accent));
     color: #fff;
@@ -133,70 +133,70 @@
   }
 
   .open svg {
-    width: clamp(18px, 3vw, 22px);
-    height: clamp(18px, 3vw, 22px);
+    width: 20px;
+    height: 20px;
   }
 
   .fields {
     display: flex;
     flex-direction: column;
-    gap: clamp(10px, 1vw, 14px);
+    gap: 10px;
   }
 
   .field {
     display: flex;
     flex-direction: column;
-    gap: clamp(4px, 0.8vw, 8px);
+    gap: 6px;
   }
 
   .label {
     font-weight: 700;
     color: var(--text);
-    font-size: clamp(0.95rem, 0.4vw + 0.85rem, 1.05rem);
+    font-size: 0.98rem;
     margin: 0;
   }
 
   .value {
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: clamp(10px, 1.5vw, 14px);
+    border-radius: var(--radius-sm);
+    padding: 12px;
     background: var(--surface-muted);
     white-space: pre-wrap;
     color: var(--text);
-    min-height: clamp(48px, 6vw, 64px);
+    min-height: 56px;
     display: flex;
     flex-wrap: wrap;
-    gap: clamp(6px, 1vw, 10px);
+    gap: 8px;
   }
 
   code {
     background: var(--card-contrast);
     color: var(--accent-muted);
-    padding: clamp(4px, 0.7vw, 6px) clamp(8px, 1.2vw, 10px);
-    border-radius: clamp(8px, 1vw, 12px);
-    font-size: clamp(0.85rem, 0.3vw + 0.75rem, 0.95rem);
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 0.88rem;
   }
 
   .preview {
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: clamp(12px, 1.5vw, 16px);
+    border-radius: var(--radius-sm);
+    padding: 12px;
     display: grid;
     grid-template-columns: 1fr;
-    gap: clamp(8px, 1vw, 12px);
+    gap: 8px;
     background: var(--surface-muted);
   }
 
   .preview strong {
-    font-size: clamp(1rem, 0.4vw + 0.9rem, 1.1rem);
+    font-size: 1rem;
     color: var(--text);
   }
 
   .preview ul {
     margin: 0;
-    padding-left: clamp(14px, 2vw, 18px);
+    padding-left: 18px;
     display: grid;
-    gap: clamp(6px, 1vw, 10px);
+    gap: 6px;
   }
 
   .preview li {
@@ -205,16 +205,16 @@
 
   .empty {
     margin: 0;
-    padding: clamp(12px, 2vw, 16px);
+    padding: 14px;
     background: var(--surface-muted);
-    border-radius: 12px;
+    border-radius: var(--radius-sm);
     border: 1px dashed var(--border);
     color: var(--muted);
   }
 
   @media (max-width: 720px) {
     .fields {
-      gap: clamp(12px, 2vw, 16px);
+      gap: 12px;
     }
 
     .value {

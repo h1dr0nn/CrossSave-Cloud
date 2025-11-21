@@ -56,37 +56,44 @@
 
 <style>
   aside {
-    position: relative;
-    width: clamp(180px, 22vw, 260px);
-    min-width: clamp(180px, 20vw, 240px);
-    max-width: 260px;
-    background: var(--surface);
-    backdrop-filter: blur(6px);
-    border-right: 1px solid var(--border);
-    box-shadow: 6px 0 24px var(--shadow);
-    padding: clamp(12px, 1.8vw, 18px);
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    width: clamp(220px, 22vw, 280px);
+    min-width: clamp(220px, 22vw, 280px);
+    max-width: 320px;
+    background: color-mix(in srgb, var(--surface) 95%, transparent);
+    backdrop-filter: blur(12px);
+    border-right: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+    box-shadow: var(--shadow-soft);
+    border-radius: 0 18px 18px 0;
+    overflow: hidden;
+    padding: 18px;
     display: flex;
     flex-direction: column;
-    gap: clamp(12px, 1vw, 18px);
+    gap: 16px;
     transition: transform 0.25s ease, opacity 0.25s ease;
+    z-index: 2;
   }
 
   aside.drawer {
     position: fixed;
-    inset: 0 0 auto 0;
-    transform: translateY(-105%);
-    max-width: none;
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
+    inset: 0 auto 0 0;
+    height: 100vh;
+    transform: translateX(-105%);
+    max-width: 320px;
+    width: min(82vw, 320px);
+    border-right: 1px solid var(--border);
+    border-bottom: none;
     box-shadow: 0 16px 32px var(--shadow);
     z-index: 40;
-    height: auto;
     background: var(--surface);
+    border-radius: 0;
   }
 
   aside.drawer.selected {
-    transform: translateY(0);
+    transform: translateX(0);
     opacity: 1;
   }
 
@@ -132,7 +139,7 @@
   .close {
     background: var(--surface-muted);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-sm);
     padding: clamp(6px, 1vw, 8px);
     cursor: pointer;
     color: var(--text);
