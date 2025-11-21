@@ -34,6 +34,17 @@ export interface EmulatorProfile {
   file_patterns: string[];
 }
 
+export interface AppSettings {
+  retention_limit: number;
+  auto_delete: boolean;
+}
+
+export interface StorageInfo {
+  history_path: string;
+  size_bytes: number;
+  retention_bounds: [number, number];
+}
+
 export interface PackageResponse {
   packaged: PackagedSave;
   history: HistoryEntry;
@@ -78,6 +89,14 @@ export function listProfiles(): Promise<EmulatorProfile[]> {
   return invoke("list_profiles");
 }
 
+export function saveProfile(profile: EmulatorProfile): Promise<EmulatorProfile> {
+  return invoke("save_profile", { profile });
+}
+
+export function deleteProfile(emulatorId: string): Promise<void> {
+  return invoke("delete_profile", { emulator_id: emulatorId });
+}
+
 export function validatePaths(paths: string[]): Promise<string[]> {
   return invoke("validate_paths", { paths });
 }
@@ -96,4 +115,20 @@ export function rollbackVersion(gameId: string, versionId: string): Promise<Pack
 
 export function deleteHistoryItem(gameId: string, versionId: string): Promise<void> {
   return invoke("delete_history_item", { game_id: gameId, version_id: versionId });
+}
+
+export function getAppSettings(): Promise<AppSettings> {
+  return invoke("get_app_settings");
+}
+
+export function updateAppSettings(settings: AppSettings): Promise<AppSettings> {
+  return invoke("update_app_settings", { settings });
+}
+
+export function getStorageInfo(): Promise<StorageInfo> {
+  return invoke("get_storage_info");
+}
+
+export function clearHistoryCache(): Promise<void> {
+  return invoke("clear_history_cache");
 }
