@@ -10,7 +10,7 @@ function goBack() {
 </script>
 
 <section class="settings">
-  <AppHeader title="Settings" showBack onBack={goBack} />
+  <AppHeader title="Settings" showBack onBack={goBack} onMenu={() => {}} />
 
   <div class="panel-stack">
     <ThemeSelector />
