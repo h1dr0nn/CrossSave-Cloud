@@ -92,6 +92,8 @@
     border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
     gap: 6px;
     overflow: hidden;
+    width: 100%;
+    justify-content: space-between;
   }
 
   .segmented button {
@@ -103,6 +105,9 @@
     font-weight: 700;
     cursor: pointer;
     transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+    flex: 1;
+    min-width: 0;
+    text-align: center;
   }
 
   .segmented button.active,
