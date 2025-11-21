@@ -1,5 +1,6 @@
 use tracing::{info, warn};
 
+#[allow(unused_imports)]
 use crate::core::profile::{get_profile_by_id, get_profiles, EmulatorProfile, ProfileError};
 
 #[tauri::command]

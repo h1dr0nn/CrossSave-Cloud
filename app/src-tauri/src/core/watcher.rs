@@ -30,6 +30,7 @@ pub enum WatcherError {
 
 #[derive(Debug)]
 struct WatcherInstance {
+    #[allow(dead_code)]
     watcher: RecommendedWatcher,
     stop_tx: async_channel::Sender<()>,
     task_handle: tauri::async_runtime::JoinHandle<()>,
@@ -250,6 +251,7 @@ fn map_event_kind(kind: &EventKind) -> Option<WatchEventType> {
     }
 }
 
+#[allow(dead_code)]
 pub fn watcher_event_name() -> &'static str {
     WATCHER_EVENT_NAME
 }
