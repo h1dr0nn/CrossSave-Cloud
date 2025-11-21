@@ -1,8 +1,8 @@
 [package]
-name = "tauri-app"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+name = "crosssave-cloud"
+version = "0.0.1"
+description = "Cross-platform cloud sync for emulator save files on Linux and Android."
+authors = ["h1dr0n"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -22,7 +22,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-notify = { version = "6", default-features = false, features = ["serde"] }
+notify = { version = "6", default-features = false, features = ["serde", "macos_fsevent", "crossbeam-channel"] }
 async-channel = "2"
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "sync", "time"] }
