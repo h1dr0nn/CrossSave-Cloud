@@ -44,13 +44,13 @@ PHASE 2 — LOCAL FULL UI/UX
 STATUS: IN PROGRESS
 ----------------------------------------
 
-2.1 Main Application UI
+2.1 Main Application UI (DONE)
 - Sidebar: Emulator list
 - Auto-load profiles
 - Game list per emulator
 - Save folder + pattern preview
 
-2.2 Game Detail View
+2.2 Game Detail View (IN PROGRESS)
 - Current save info
 - Manual save packaging
 - Recent history panel
