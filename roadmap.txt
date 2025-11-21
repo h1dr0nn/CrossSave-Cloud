@@ -50,13 +50,13 @@ STATUS: IN PROGRESS
 - Game list per emulator
 - Save folder + pattern preview
 
-2.2 Game Detail View (IN PROGRESS)
+2.2 Game Detail View (DONE)
 - Current save info
 - Manual save packaging
 - Recent history panel
 - Compare versions (hash/size/file count)
 
-2.3 Integrated Watcher UI
+2.3 Integrated Watcher UI (IN PROGRESS)
 - Live file-change feed
 - Save-changed indicator
 - Auto-package toggle
