@@ -406,27 +406,6 @@
     min-width: 0;
   }
 
-  .icon-button {
-    width: 40px;
-    height: 40px;
-    border-radius: 14px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    display: grid;
-    place-items: center;
-    color: var(--text);
-    box-shadow: var(--shadow-soft);
-    cursor: pointer;
-    transition: transform 0.12s ease, box-shadow 0.18s ease, opacity 0.16s ease,
-      border-color 0.18s ease;
-  }
-
-  .icon-button svg {
-    width: 22px;
-    height: 22px;
-  }
-
-  .icon-button:hover:not(:disabled),
   .ghost:hover:not(:disabled),
   .primary:hover:not(:disabled) {
     opacity: 0.92;
@@ -434,7 +413,6 @@
     box-shadow: var(--shadow);
   }
 
-  .icon-button:active:not(:disabled),
   .ghost:active:not(:disabled),
   .primary:active:not(:disabled) {
     transform: scale(0.98);

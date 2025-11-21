@@ -1,0 +1,5 @@
+src-tauri/data/**
+src-tauri/data/profiles/**
+src-tauri/data/config/**
+src-tauri/data/archives/**
+src-tauri/data/history/**

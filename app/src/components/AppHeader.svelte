@@ -94,34 +94,4 @@
     gap: 10px;
     align-items: center;
   }
-
-  .icon-button {
-    width: 40px;
-    height: 40px;
-    border-radius: 14px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    display: grid;
-    place-items: center;
-    color: var(--text);
-    box-shadow: var(--shadow-soft);
-    cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  }
-
-  .icon-button.primary {
-    background: var(--surface-muted);
-    backdrop-filter: blur(10px);
-  }
-
-  .icon-button:hover {
-    transform: translateY(-1px);
-    border-color: var(--accent);
-    box-shadow: var(--shadow);
-  }
-
-  .icon-button svg {
-    width: 22px;
-    height: 22px;
-  }
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import "$lib/themeStore";
-  import "../styles/global.css";
+  import "../app.css";
 </script>
 
 <slot />
