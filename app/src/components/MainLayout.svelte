@@ -112,6 +112,7 @@ function openSettings() {
         title="Dashboard"
         showMenu={isDrawerMode}
         onMenu={toggleDrawer}
+        onBack={() => {}}
       >
         <button slot="actions" class="icon-button primary" on:click={openSettings} aria-label="Open settings">
           <svg viewBox="0 0 24 24" aria-hidden="true">

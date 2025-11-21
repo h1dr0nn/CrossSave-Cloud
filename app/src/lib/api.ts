@@ -39,6 +39,13 @@ export interface PackageResponse {
   history: HistoryEntry;
 }
 
+export function packageGame(
+  emulatorId: string,
+  gameId: string
+): Promise<PackageResponse> {
+  return invoke("package_game", { emulator_id: emulatorId, game_id: gameId });
+}
+
 export function startWatcher(paths: string[]): Promise<void> {
   return invoke("start_watcher", { paths });
 }
