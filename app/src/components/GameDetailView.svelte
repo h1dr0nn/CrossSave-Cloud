@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
+  import AppHeader from "./AppHeader.svelte";
   import CompareVersionDrawer from "./CompareVersionDrawer.svelte";
   import RecentHistory from "./RecentHistory.svelte";
   import { listHistory, packageGame, type HistoryEntry } from "../lib/api";
