@@ -72,13 +72,14 @@
 
 <style>
   .panel {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface));
-    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
     border-radius: var(--radius);
-    padding: 16px;
+    padding: clamp(14px, 2vw, 18px);
     box-shadow: var(--shadow-soft);
     min-height: 0;
     color: var(--text);
+    backdrop-filter: blur(12px) saturate(1.05);
   }
 
   header {
@@ -106,11 +107,12 @@
   .badge {
     padding: 8px 12px;
     border-radius: 999px;
-    background: var(--accent-muted);
+    background: color-mix(in srgb, var(--accent-muted) 70%, var(--surface));
     color: var(--accent-strong);
     font-weight: 700;
     font-size: 0.9rem;
     border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
   }
 
   .empty {
@@ -124,15 +126,15 @@
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    grid-template-columns: 1fr;
     gap: 12px;
   }
 
   .card {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 14px;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 88%, transparent), var(--surface));
+    border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+    border-radius: 16px;
+    padding: 14px 16px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 92%, transparent), var(--surface));
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
@@ -141,22 +143,24 @@
     cursor: pointer;
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.2s ease;
     color: var(--text);
+    box-shadow: 0 8px 18px color-mix(in srgb, var(--shadow) 30%, transparent);
   }
 
   .card:hover {
     transform: translateY(-2px);
     border-color: var(--accent);
-    box-shadow: 0 12px 22px color-mix(in srgb, var(--accent-strong) 24%, transparent);
+    box-shadow: 0 16px 30px color-mix(in srgb, var(--accent-strong) 22%, transparent);
   }
 
   .icon {
     width: 52px;
     height: 52px;
-    border-radius: 14px;
+    border-radius: 16px;
     display: grid;
     place-items: center;
     background: var(--card-contrast);
     color: var(--text);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
   }
 
   .icon[data-variant="spark"] {
@@ -194,9 +198,15 @@
     stroke-width: 1.6;
   }
 
-  @media (max-width: 720px) {
+  @media (min-width: 680px) {
     .grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1180px) {
+    .grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   }
 </style>

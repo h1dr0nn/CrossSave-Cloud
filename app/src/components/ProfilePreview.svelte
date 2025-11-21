@@ -49,41 +49,44 @@
         </div>
       </div>
       <div class="field">
-        <p class="label">Glob patterns</p>
-        <div class="value">
+        <p class="label">Pattern</p>
+        <div class="value chips">
           {#each profile.file_patterns as pattern}
             <code>{pattern}</code>
           {/each}
         </div>
       </div>
-    </div>
-
-    <div class="preview">
-      <div>
-        <p class="eyebrow">Preview</p>
-        <strong>{matchedCount} matched files</strong>
+      <div class="preview">
+        <div class="preview-head">
+          <div>
+            <p class="eyebrow">Matched files</p>
+            <strong>{matchedCount} detected</strong>
+          </div>
+          <span class="pill">Live preview</span>
+        </div>
+        <ul>
+          {#each profile.file_patterns as pattern}
+            <li>{pattern}</li>
+          {/each}
+        </ul>
       </div>
-      <ul>
-        {#each profile.file_patterns as pattern}
-          <li>{pattern}</li>
-        {/each}
-      </ul>
     </div>
   {/if}
 </section>
 
 <style>
   .panel {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface));
-    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
     border-radius: var(--radius);
-    padding: 16px;
+    padding: clamp(14px, 2vw, 18px);
     box-shadow: var(--shadow-soft);
     display: flex;
     flex-direction: column;
     gap: 14px;
     min-height: 0;
     color: var(--text);
+    backdrop-filter: blur(12px) saturate(1.05);
   }
 
   header {
@@ -91,6 +94,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    flex-wrap: wrap;
   }
 
   h2 {
@@ -119,6 +123,7 @@
     font-weight: 700;
     cursor: pointer;
     transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    box-shadow: 0 12px 24px color-mix(in srgb, var(--accent-strong) 28%, transparent);
   }
 
   .open:disabled {
@@ -140,7 +145,7 @@
   .fields {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
   }
 
   .field {
@@ -160,7 +165,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 12px;
-    background: var(--surface-muted);
+    background: color-mix(in srgb, var(--surface-muted) 90%, transparent);
     white-space: pre-wrap;
     color: var(--text);
     min-height: 56px;
@@ -169,22 +174,36 @@
     gap: 8px;
   }
 
+  .value.chips {
+    gap: 10px;
+  }
+
   code {
-    background: var(--card-contrast);
-    color: var(--accent-muted);
+    background: color-mix(in srgb, var(--card-contrast) 88%, transparent);
+    color: var(--accent-strong);
     padding: 6px 10px;
     border-radius: var(--radius-sm);
     font-size: 0.88rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
   }
 
   .preview {
-    border: 1px solid var(--border);
+    border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
     border-radius: var(--radius-sm);
     padding: 12px;
     display: grid;
     grid-template-columns: 1fr;
-    gap: 8px;
-    background: var(--surface-muted);
+    gap: 10px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 90%, transparent), var(--surface));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
   }
 
   .preview strong {
@@ -197,6 +216,16 @@
     padding-left: 18px;
     display: grid;
     gap: 6px;
+  }
+
+  .pill {
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+    background: color-mix(in srgb, var(--accent-muted) 70%, var(--surface));
+    color: var(--accent-strong);
+    font-weight: 700;
+    font-size: 0.85rem;
   }
 
   .preview li {
