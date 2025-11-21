@@ -128,10 +128,12 @@ onMount(async () => {
         </button>
       </header>
 
-      <div class="content-grid">
-        <GameList games={selectedGames} emulatorName={selectedProfile?.name ?? ""} />
-        <ProfilePreview profile={selectedProfile} loading={loadingProfiles} />
-      </div>
+      <main class="content-body">
+        <div class="content-grid">
+          <GameList games={selectedGames} emulatorName={selectedProfile?.name ?? ""} />
+          <ProfilePreview profile={selectedProfile} loading={loadingProfiles} />
+        </div>
+      </main>
     </div>
   </div>
 </div>
@@ -144,6 +146,7 @@ onMount(async () => {
     width: 100%;
     background: var(--bg);
     color: var(--text);
+    align-items: stretch;
   }
 
   .content {
@@ -151,15 +154,19 @@ onMount(async () => {
     width: 100%;
     display: flex;
     justify-content: center;
+    height: 100vh;
+    overflow: auto;
+    position: relative;
   }
 
   .content-inner {
     flex: 1;
     max-width: 1320px;
     padding: 24px clamp(16px, 3vw, 32px) 28px;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: auto 1fr;
     gap: 16px;
+    min-height: 100%;
   }
 
   .app-header {
@@ -236,6 +243,12 @@ onMount(async () => {
     height: 22px;
   }
 
+  .content-body {
+    min-height: 0;
+    overflow: auto;
+    padding-bottom: 6px;
+  }
+
   .content-grid {
     display: grid;
     grid-template-columns: 1fr;
@@ -258,6 +271,16 @@ onMount(async () => {
     .content-inner {
       padding: 16px 14px 20px;
       gap: 12px;
+    }
+
+    .content {
+      height: auto;
+      min-height: 100vh;
+      overflow: visible;
+    }
+
+    .content-body {
+      overflow: visible;
     }
 
     .app-header {
