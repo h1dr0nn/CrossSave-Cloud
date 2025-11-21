@@ -68,13 +68,23 @@
     border-right: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
     box-shadow: var(--shadow-soft);
     border-radius: 0 18px 18px 0;
-    overflow: hidden;
     padding: 18px;
     display: flex;
     flex-direction: column;
     gap: 16px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -ms-overflow-style: none;
     transition: transform 0.25s ease, opacity 0.25s ease;
     z-index: 2;
+  }
+
+  aside::-webkit-scrollbar {
+    display: none;
+  }
+
+  aside {
+    scrollbar-width: none;
   }
 
   aside.drawer {
