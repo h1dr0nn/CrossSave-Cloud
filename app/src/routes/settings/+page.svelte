@@ -41,30 +41,30 @@ function goBack() {
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M14.5 6 8.5 12l6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
       </svg>
-      <span>Back</span>
     </button>
     <h1>Settings</h1>
+    <span class="spacer" aria-hidden="true"></span>
   </header>
 
   <div class="panel">
-    <div>
-      <p class="label">Appearance</p>
-      <p class="helper">Pick a light or dark look, or follow your operating system.</p>
+    <div class="section-header">
+      <p class="label">Theme</p>
+      <span class="hint">Applies instantly</span>
     </div>
-    <div class="actions">
-      <button class="pill" class:active={$themePreference === "light"} on:click={setLight} aria-pressed={$themePreference === "light"}>
-        <span>Light</span>
+    <div class="segmented" role="group" aria-label="Theme selector">
+      <button class:active={$themePreference === "light"} aria-pressed={$themePreference === "light"} on:click={setLight}>
+        Light
       </button>
-      <button class="pill" class:active={$themePreference === "dark"} on:click={setDark} aria-pressed={$themePreference === "dark"}>
-        <span>Dark</span>
+      <button class:active={$themePreference === "dark"} aria-pressed={$themePreference === "dark"} on:click={setDark}>
+        Dark
       </button>
-      <button class="pill" class:active={$themePreference === "system"} on:click={useSystem} aria-pressed={$themePreference === "system"}>
+      <button class:active={$themePreference === "system"} aria-pressed={$themePreference === "system"} on:click={useSystem}>
         System
       </button>
     </div>
-    <div class="hint">
+    <div class="status">
       <span class="dot" aria-hidden="true"></span>
-      <p>Current theme: {$activeTheme}</p>
+      <p>Current theme: {$activeTheme}{hasManualPreference ? " (manual)" : " (system)"}</p>
     </div>
   </div>
 </section>
@@ -81,26 +81,30 @@ function goBack() {
   }
 
   .settings-bar {
-    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
-    justify-content: space-between;
     gap: 10px;
-    padding: 14px 16px;
+    padding: 12px 14px;
     border-radius: 18px;
     background: color-mix(in srgb, var(--surface) 94%, transparent);
     border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
-    box-shadow: 0 12px 28px color-mix(in srgb, var(--shadow) 35%, transparent);
-    backdrop-filter: blur(16px);
-    width: 100%;
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(14px);
   }
 
   .icon-button {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
-    height: 32px;
-    padding: 0 12px;
-    border-radius: 10px;
+    height: 36px;
+    width: 36px;
+    padding: 0;
+    border-radius: 12px;
     border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
     background: linear-gradient(120deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface));
     cursor: pointer;
@@ -121,15 +125,18 @@ function goBack() {
   }
 
   h1 {
-    flex: 1;
-    text-align: right;
-    margin: 0 0 0 auto;
+    text-align: center;
+    margin: 0;
     font-size: clamp(1.3rem, 0.7vw + 1.15rem, 1.7rem);
     letter-spacing: -0.01em;
     white-space: nowrap;
-    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .spacer {
+    width: 36px;
+    height: 36px;
   }
 
   .panel {
@@ -141,47 +148,57 @@ function goBack() {
     display: grid;
     gap: 14px;
     align-content: start;
+    backdrop-filter: blur(12px);
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
   }
 
   .label {
-    margin: 0 0 4px;
-    font-weight: 700;
-  }
-
-  .helper {
     margin: 0;
-    color: var(--muted);
-  }
-
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .pill {
-    padding: 10px 14px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--surface-muted);
-    color: var(--text);
-    cursor: pointer;
     font-weight: 700;
-    transition: border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
-  }
-
-  .pill[aria-pressed="true"],
-  .pill.active {
-    border-color: var(--accent);
-    box-shadow: 0 10px 18px color-mix(in srgb, var(--accent-strong) 20%, transparent);
-    transform: translateY(-1px);
-  }
-
-  .pill:hover {
-    border-color: var(--accent);
   }
 
   .hint {
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+
+  .segmented {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-radius: 14px;
+    padding: 4px;
+    background: color-mix(in srgb, var(--surface-muted) 85%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+    gap: 6px;
+  }
+
+  .segmented button {
+    border: none;
+    border-radius: 12px;
+    padding: 10px;
+    background: transparent;
+    color: var(--text);
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+  }
+
+  .segmented button.active,
+  .segmented button[aria-pressed="true"] {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent-muted) 80%, var(--surface)), var(--surface));
+    box-shadow: 0 10px 18px color-mix(in srgb, var(--accent-strong) 18%, transparent);
+    transform: translateY(-1px);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  }
+
+  .status {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -194,6 +211,7 @@ function goBack() {
     border-radius: 50%;
     background: var(--accent);
     display: inline-block;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-muted) 40%, transparent);
   }
 
   @media (max-width: 640px) {
@@ -201,13 +219,8 @@ function goBack() {
       font-size: 1.3rem;
     }
 
-    .actions {
-      width: 100%;
-    }
-
-    .pill {
-      flex: 1;
-      text-align: center;
+    .segmented {
+      grid-template-columns: 1fr;
     }
   }
 </style>

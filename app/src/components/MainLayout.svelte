@@ -43,45 +43,45 @@ onMount(async () => {
   }
 });
 
-  $: selectedProfile = profiles.find((p) => p.emulator_id === selectedEmulatorId) ?? null;
-  $: isMobile = viewportWidth < 720;
-  $: selectedGames = selectedEmulatorId ? cachedGames.get(selectedEmulatorId) ?? [] : [];
+$: selectedProfile = profiles.find((p) => p.emulator_id === selectedEmulatorId) ?? null;
+$: isMobile = viewportWidth < 720;
+$: selectedGames = selectedEmulatorId ? cachedGames.get(selectedEmulatorId) ?? [] : [];
 
-  function preloadGames(items: EmulatorProfile[]) {
-    items.forEach((profile) => {
-      if (!cachedGames.has(profile.emulator_id)) {
-        cachedGames.set(profile.emulator_id, generateGames(profile));
-      }
-    });
-  }
-
-  function generateGames(profile: EmulatorProfile): GameEntry[] {
-    const baseName = profile.name.split(" ")[0] || profile.name;
-    const now = Date.now();
-    return Array.from({ length: 6 }, (_, index) => ({
-      id: `${profile.emulator_id}-game-${index + 1}`,
-      emulatorId: profile.emulator_id,
-      name: `${baseName} Save ${index + 1}`,
-      icon: index % 3 === 0 ? "spark" : index % 2 === 0 ? "disc" : "console",
-      lastModified: new Date(now - (index + 1) * 36 * 60 * 60 * 1000).toISOString()
-    }));
-  }
-
-  function selectEmulator(id: string) {
-    selectedEmulatorId = id;
-    cachedSelectedEmulatorId = id;
-    if (isMobile) {
-      drawerOpen = false;
+function preloadGames(items: EmulatorProfile[]) {
+  items.forEach((profile) => {
+    if (!cachedGames.has(profile.emulator_id)) {
+      cachedGames.set(profile.emulator_id, generateGames(profile));
     }
-  }
+  });
+}
 
-  function toggleDrawer() {
-    drawerOpen = !drawerOpen;
-  }
+function generateGames(profile: EmulatorProfile): GameEntry[] {
+  const baseName = profile.name.split(" ")[0] || profile.name;
+  const now = Date.now();
+  return Array.from({ length: 6 }, (_, index) => ({
+    id: `${profile.emulator_id}-game-${index + 1}`,
+    emulatorId: profile.emulator_id,
+    name: `${baseName} Save ${index + 1}`,
+    icon: index % 3 === 0 ? "spark" : index % 2 === 0 ? "disc" : "console",
+    lastModified: new Date(now - (index + 1) * 36 * 60 * 60 * 1000).toISOString()
+  }));
+}
 
-  function openSettings() {
-    goto("/settings", { keepFocus: true, noScroll: true });
+function selectEmulator(id: string) {
+  selectedEmulatorId = id;
+  cachedSelectedEmulatorId = id;
+  if (isMobile) {
+    drawerOpen = false;
   }
+}
+
+function toggleDrawer() {
+  drawerOpen = !drawerOpen;
+}
+
+function openSettings() {
+  goto("/settings", { keepFocus: true, noScroll: true });
+}
 </script>
 
 <svelte:window bind:innerWidth={viewportWidth} />
@@ -98,7 +98,7 @@ onMount(async () => {
   />
 
   <div class="content">
-    <div class="content-inner">
+    <div class="content-surface">
       <header class="app-header">
         <div class="leading">
           {#if isMobile}
@@ -147,33 +147,31 @@ onMount(async () => {
     background: var(--bg);
     color: var(--text);
     align-items: stretch;
+    overflow: hidden;
   }
 
   .content {
     min-width: 0;
     width: 100%;
-    display: flex;
-    justify-content: center;
-    min-height: 100vh;
-    height: auto;
-    overflow: visible;
+    height: 100vh;
+    display: grid;
+    place-items: stretch;
     position: relative;
+    overflow: hidden;
   }
 
-  .content-inner {
-    flex: 1;
-    max-width: 1320px;
-    padding: 24px clamp(16px, 3vw, 32px) 28px;
-    display: grid;
-    grid-template-rows: auto 1fr;
-    gap: 16px;
-    min-height: 100%;
+  .content-surface {
+    display: flex;
+    flex-direction: column;
+    max-width: 1360px;
+    margin: 0 auto;
+    width: 100%;
+    height: 100vh;
+    padding: clamp(16px, 2.5vw, 32px);
+    gap: 14px;
   }
 
   .app-header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -183,7 +181,10 @@ onMount(async () => {
     background: color-mix(in srgb, var(--surface) 92%, transparent);
     border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
     box-shadow: var(--shadow-soft);
-    backdrop-filter: blur(14px);
+    backdrop-filter: blur(16px);
+    position: sticky;
+    top: 0;
+    z-index: 12;
   }
 
   .leading {
@@ -218,7 +219,7 @@ onMount(async () => {
   .icon-button {
     width: 40px;
     height: 40px;
-    border-radius: 50%;
+    border-radius: 14px;
     border: 1px solid var(--border);
     background: var(--surface);
     display: grid;
@@ -231,6 +232,7 @@ onMount(async () => {
 
   .icon-button.primary {
     background: var(--surface-muted);
+    backdrop-filter: blur(10px);
   }
 
   .icon-button:hover {
@@ -246,8 +248,20 @@ onMount(async () => {
 
   .content-body {
     min-height: 0;
-    overflow: visible;
+    flex: 1;
+    overflow: auto;
     padding-bottom: 6px;
+    scrollbar-width: thin;
+    scroll-behavior: smooth;
+  }
+
+  .content-body::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .content-body::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+    border-radius: 12px;
   }
 
   .content-grid {
@@ -258,9 +272,9 @@ onMount(async () => {
     min-height: 0;
   }
 
-  @media (min-width: 860px) {
+  @media (min-width: 780px) {
     .content-grid {
-      grid-template-columns: minmax(360px, 1.2fr) minmax(320px, 1fr);
+      grid-template-columns: minmax(360px, 1.1fr) minmax(320px, 1fr);
     }
   }
 
@@ -269,23 +283,13 @@ onMount(async () => {
       grid-template-columns: 1fr;
     }
 
-    .content-inner {
-      padding: 16px 14px 20px;
-      gap: 12px;
-    }
-
     .content {
       height: auto;
       min-height: 100vh;
-      overflow: visible;
     }
 
-    .content-body {
-      overflow: visible;
-    }
-
-    .app-header {
-      position: static;
+    .content-surface {
+      height: auto;
     }
   }
 </style>
