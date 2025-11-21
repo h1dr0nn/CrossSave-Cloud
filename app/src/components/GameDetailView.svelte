@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
+  import AppHeader from "./AppHeader.svelte";
   import CompareVersionDrawer from "./CompareVersionDrawer.svelte";
   import RecentHistory from "./RecentHistory.svelte";
   import { listHistory, packageGame, type HistoryEntry } from "../lib/api";
@@ -111,28 +112,29 @@
 </script>
 
 <section class="detail-shell">
-  <div class="page-header">
-    <button class="icon-button" on:click={goBack} aria-label="Go back">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M14.5 6 8.5 12l6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-      </svg>
-    </button>
-  </div>
-
-  <div class="hero">
-    <div class="icon" aria-hidden="true">{gameName.charAt(0) || "G"}</div>
-    <div class="heading">
-      <p class="eyebrow">Save Management</p>
-      <h1>{gameName}</h1>
-      <p class="meta">Game ID: {gameId}</p>
-    </div>
-    <div class="actions">
+  <AppHeader
+    eyebrow="Game Detail"
+    title={gameName || "Game"}
+    showBack
+    onBack={goBack}
+    onMenu={() => {}}
+  >
+    <div slot="actions" class="header-actions">
       <button class="primary" on:click={packageNow} disabled={packaging}>
         {packaging ? "Packaging..." : "Package now"}
       </button>
       <button class="ghost" on:click={loadHistory} disabled={reloading}>
         {reloading ? "Refreshing" : "Reload"}
       </button>
+    </div>
+  </AppHeader>
+
+  <div class="hero">
+    <div class="icon" aria-hidden="true">{gameName.charAt(0) || "G"}</div>
+    <div class="heading">
+      <p class="section-title">Save Management</p>
+      <h1>{gameName}</h1>
+      <p class="meta">ID: {gameId}</p>
     </div>
   </div>
 
@@ -214,41 +216,41 @@
     border-radius: var(--radius);
     padding: clamp(16px, 2vw, 22px);
     display: grid;
-    grid-template-columns: auto 1fr auto;
-    gap: 14px;
+    grid-template-columns: auto 1fr;
+    gap: clamp(12px, 2vw, 18px);
     align-items: center;
     box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(14px);
+    position: relative;
+    overflow: hidden;
   }
 
-  .page-header {
+  .hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 10% 20%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 35%),
+      radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--accent-strong) 10%, transparent), transparent 40%);
+    pointer-events: none;
+    opacity: 0.8;
+  }
+
+  .hero > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .header-actions {
     display: flex;
     align-items: center;
-    justify-content: flex-start;
+    gap: clamp(8px, 1vw, 12px);
+    flex-wrap: nowrap;
+    min-width: 0;
   }
 
-  .icon-button {
-    width: 40px;
-    height: 40px;
-    border-radius: 14px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    display: grid;
-    place-items: center;
-    color: var(--text);
-    box-shadow: var(--shadow-soft);
-    cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  }
-
-  .icon-button:hover {
-    transform: translateY(-1px);
-    border-color: var(--accent);
-    box-shadow: var(--shadow);
-  }
-
-  .icon-button svg {
-    width: 22px;
-    height: 22px;
+  .header-actions button {
+    white-space: nowrap;
+    flex: 0 1 auto;
   }
 
   .icon {
@@ -265,27 +267,24 @@
 
   .heading h1 {
     margin: 4px 0 4px;
-    font-size: clamp(1.2rem, 1vw + 1rem, 1.8rem);
+    font-size: clamp(1.7rem, 0.9vw + 1.3rem, 2.2rem);
+    letter-spacing: -0.02em;
+    font-weight: 800;
   }
 
-  .heading .meta {
+  .section-title {
     margin: 0;
     color: var(--muted);
-  }
-
-  .eyebrow {
-    margin: 0;
-    color: var(--muted);
-    letter-spacing: 0.08em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
+    font-weight: 700;
   }
 
-  .actions {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
+  .meta {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.95rem;
   }
 
   .primary {
@@ -296,7 +295,7 @@
     border: 1px solid color-mix(in srgb, var(--accent-strong) 70%, transparent);
     box-shadow: var(--shadow);
     cursor: pointer;
-    min-width: 140px;
+    min-width: clamp(120px, 14vw, 150px);
   }
 
   .primary:disabled {
@@ -316,15 +315,17 @@
   .info-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 12px;
+    gap: 14px;
+    align-items: stretch;
   }
 
   .info-card {
     border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-    background: color-mix(in srgb, var(--surface) 90%, transparent);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
     border-radius: var(--radius);
-    padding: 14px 16px;
+    padding: 16px 18px;
     box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(12px);
   }
 
   .label {
@@ -351,15 +352,9 @@
 
   .panels {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-
-  @media (min-width: 960px) {
-    .panels {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-    }
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 14px;
+    align-items: stretch;
   }
 
   .summary-header {
@@ -401,11 +396,13 @@
 
   @media (max-width: 720px) {
     .hero {
-      grid-template-columns: 1fr;
+      grid-template-columns: auto 1fr;
+      align-items: start;
     }
 
-    .actions {
-      justify-content: flex-start;
+    .header-actions {
+      justify-content: flex-end;
+      width: 100%;
     }
   }
 </style>
