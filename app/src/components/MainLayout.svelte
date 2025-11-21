@@ -154,8 +154,9 @@ onMount(async () => {
     width: 100%;
     display: flex;
     justify-content: center;
-    height: 100vh;
-    overflow: auto;
+    min-height: 100vh;
+    height: auto;
+    overflow: visible;
     position: relative;
   }
 
@@ -245,7 +246,7 @@ onMount(async () => {
 
   .content-body {
     min-height: 0;
-    overflow: auto;
+    overflow: visible;
     padding-bottom: 6px;
   }
 
