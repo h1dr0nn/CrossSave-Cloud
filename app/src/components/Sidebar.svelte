@@ -64,8 +64,8 @@
     top: 0;
     align-self: start;
     height: 100vh;
-    width: clamp(220px, 22vw, 280px);
-    min-width: clamp(220px, 22vw, 280px);
+    width: clamp(260px, 24vw, 300px);
+    min-width: 260px;
     max-width: 320px;
     padding: 12px;
     background: transparent;
@@ -94,12 +94,14 @@
     height: 100vh;
     max-width: 320px;
     width: min(82vw, 320px);
+    min-width: 260px;
     border-right: 1px solid var(--border);
     box-shadow: 0 16px 32px var(--shadow);
     background: var(--surface);
     border-radius: 0 18px 18px 0;
     transform: translateX(-105%);
     transition: transform 0.25s ease, opacity 0.25s ease;
+    z-index: 9999;
   }
 
   aside.drawer .sidebar-surface {
@@ -115,7 +117,7 @@
     position: fixed;
     inset: 0;
     background: color-mix(in srgb, var(--overlay) 85%, transparent);
-    z-index: 40;
+    z-index: 9998;
     backdrop-filter: blur(1px);
   }
 
