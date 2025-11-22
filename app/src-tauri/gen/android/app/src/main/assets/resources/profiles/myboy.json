@@ -1,0 +1,11 @@
+{
+  "emulator_id": "myboy",
+  "name": "MyBoy! (GBA)",
+  "default_save_paths": [
+    "/storage/emulated/0/MyBoy/save",
+    "/sdcard/MyBoy/save",
+    "/storage/sdcard1/MyBoy/save",
+    "/mnt/media_rw/sdcard1/MyBoy/save"
+  ],
+  "file_patterns": ["*.sav", "*.st*"]
+}

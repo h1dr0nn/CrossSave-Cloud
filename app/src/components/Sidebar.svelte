@@ -1,46 +1,91 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { createEventDispatcher } from "svelte";
   import EmulatorList from "./EmulatorList.svelte";
   import type { EmulatorProfile } from "../lib/api";
 
   export let emulators: EmulatorProfile[] = [];
   export let selectedId: string | null = null;
-  export let isMobile = false;
-  export let open = false;
   export let loading = false;
+  export let isMobile = false;
+  export let isOpen = false;
 
-  const dispatch = createEventDispatcher<{ select: string; close: void }>();
+  const dispatch = createEventDispatcher<{
+    select: string;
+    close: void;
+  }>();
 
-  function select(id: string) {
+  function selectEmulator(id: string) {
     dispatch("select", id);
   }
 
   function close() {
-    if (isMobile) {
-      dispatch("close");
+    dispatch("close");
+  }
+
+  // Lock body scroll when sidebar is open on mobile
+  $: if (typeof document !== "undefined") {
+    if (isMobile && isOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
     }
   }
 </script>
 
-{#if isMobile && open}
-  <div class="overlay" on:click={close} aria-hidden="true"></div>
+{#if isMobile && isOpen}
+  <div
+    class="overlay"
+    on:click={close}
+    on:keydown={(e) => e.key === "Escape" && close()}
+    role="button"
+    tabindex="-1"
+    aria-label="Close sidebar"
+  ></div>
 {/if}
 
 <aside
-  class:selected={!isMobile || open}
+  class:selected={!isMobile || isOpen}
   class:drawer={isMobile}
   aria-label="Emulator list"
 >
   <div class="sidebar-surface">
     <div class="sidebar-header">
       <div class="title">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M6.5 3.5h11a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Zm0 2v13h11v-13Z"
-            fill="currentColor"
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <rect
+            x="6"
+            y="4"
+            width="12"
+            height="16"
+            rx="2"
+            fill="url(#sidebar-grad)"
           />
-          <circle cx="9" cy="9" r="1" fill="#10b981" />
-          <circle cx="15" cy="9" r="1" fill="#10b981" />
+          <rect
+            x="7.5"
+            y="5.5"
+            width="9"
+            height="5"
+            rx="0.5"
+            fill="#1e293b"
+            opacity="0.3"
+          />
+          <circle cx="9" cy="14" r="1" fill="#10b981" />
+          <circle cx="9" cy="17" r="1" fill="#10b981" />
+          <path d="M14 13h1v1h1v1h-1v1h-1v-1h-1v-1h1v-1z" fill="#22c55e" />
+          <circle cx="15.5" cy="18" r="0.7" fill="#ef4444" />
+          <circle cx="13.5" cy="18" r="0.7" fill="#3b82f6" />
+          <defs>
+            <linearGradient id="sidebar-grad" x1="6" y1="4" x2="18" y2="20">
+              <stop offset="0%" stop-color="#8b5cf6" />
+              <stop offset="100%" stop-color="#6366f1" />
+            </linearGradient>
+          </defs>
         </svg>
         <div>
           <p>Emulators</p>
@@ -73,7 +118,7 @@
       <EmulatorList
         {emulators}
         {selectedId}
-        on:select={(event) => select(event.detail)}
+        on:select={(e) => selectEmulator(e.detail)}
       />
     </div>
   </div>
@@ -90,10 +135,12 @@
     max-width: 320px;
     padding: 12px;
     background: transparent;
-    border-right: 1px solid rgba(var(--border-rgb), 0.5);
-    border-right: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
     z-index: 6;
     overflow: hidden;
+  }
+
+  aside.drawer {
+    border-right: none;
   }
 
   .sidebar-surface {
@@ -106,9 +153,8 @@
     padding-left: max(14px, env(safe-area-inset-left));
     padding-right: 14px;
     background: var(--surface);
-    /* backdrop-filter: blur(20px) saturate(1.1); -- Disabled for performance on low-end devices */
-    border: 1px solid rgba(var(--border-rgb), 0.5);
-    border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 16px;
     box-shadow: var(--shadow-soft);
     overflow: hidden;
   }
@@ -120,7 +166,6 @@
     max-width: 320px;
     width: min(82vw, 320px);
     min-width: 260px;
-    border-right: 1px solid var(--border);
     box-shadow: 0 16px 32px var(--shadow);
     background: var(--surface);
     border-radius: 0 18px 18px 0;

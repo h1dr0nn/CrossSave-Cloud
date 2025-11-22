@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { openPath } from "@tauri-apps/plugin-opener";
   import { pushInfo, pushError } from "../lib/notifications";
+  import { openFolder as openFolderAPI } from "../lib/api";
+  import type { EmulatorProfile } from "../lib/api";
 
   export let profile: EmulatorProfile | null = null;
   export let loading = false;
@@ -18,38 +19,17 @@
 
     for (const path of profile.default_save_paths) {
       try {
-        await openPath(path);
+        await openFolderAPI(path);
+        pushInfo(`Opening folder: ${path}`);
         return;
       } catch (error) {
         console.warn(`Failed to open ${path}`, error);
       }
     }
 
-    pushInfo("Could not open specific folder. Opening file manager...");
-
-    try {
-      // Fallback to root storage
-      await openPath("/storage/emulated/0");
-    } catch (e) {
-      console.error("Failed to open root storage", e);
-      pushError("Unable to open file manager.");
-    }
-  }
-
-  import { checkPathStatus, type PathStatus } from "../lib/api";
-
-  let pathStatuses: PathStatus[] = [];
-  let showDebug = false;
-
-  async function debugPaths() {
-    if (!profile) return;
-    try {
-      pathStatuses = await checkPathStatus(profile.emulator_id);
-      showDebug = true;
-    } catch (e) {
-      console.error("Failed to check paths", e);
-      pushError("Failed to check path status");
-    }
+    pushError(
+      "Could not open any of the configured folders. Please check if they exist."
+    );
   }
 </script>
 
@@ -59,96 +39,20 @@
       <p class="eyebrow">Save folder preview</p>
       <h2>{profile?.name ?? "Select an emulator"}</h2>
     </div>
-    <div class="actions">
-      {#if profile}
-        <button class="debug-btn" on:click={debugPaths} title="Check paths">
-          <svg
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
-      {/if}
-      <button
-        class="open"
-        on:click={openFolder}
-        disabled={!profile?.default_save_paths.length}
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M4.5 6a2 2 0 0 1 2-2h2.9a1 1 0 0 1 .83.45L11.8 6H17.5A2.5 2.5 0 0 1 20 8.5v8.25a1.75 1.75 0 0 1-1.75 1.75h-11.5A2.25 2.25 0 0 1 4.5 16.25Z"
-            fill="currentColor"
-          />
-        </svg>
-        Open folder
-      </button>
-    </div>
+    <button
+      class="open"
+      on:click={openFolder}
+      disabled={!profile?.default_save_paths.length}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M4.5 6a2 2 0 0 1 2-2h2.9a1 1 0 0 1 .83.45L11.8 6H17.5A2.5 2.5 0 0 1 20 8.5v8.25a1.75 1.75 0 0 1-1.75 1.75h-11.5A2.25 2.25 0 0 1 4.5 16.25Z"
+          fill="currentColor"
+        />
+      </svg>
+      Open folder
+    </button>
   </header>
-
-  {#if showDebug}
-    <div class="debug-panel">
-      <div class="debug-header">
-        <h3>Path Status</h3>
-        <button on:click={() => (showDebug = false)}>Close</button>
-      </div>
-      <ul class="path-list">
-        {#each pathStatuses as status}
-          <li
-            class:valid={status.exists && status.is_dir}
-            class:invalid={!status.exists || !status.is_dir}
-          >
-            <div class="status-icon">
-              {#if status.exists && status.is_dir}
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  class="icon-success"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              {:else}
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  class="icon-error"
-                >
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-              {/if}
-            </div>
-            <div class="path-details">
-              <span class="path">{status.path}</span>
-              <span class="error">
-                {#if !status.exists}
-                  Not found
-                {:else if !status.is_dir}
-                  Not a directory
-                {:else if status.error}
-                  Error: {status.error}
-                {:else}
-                  OK
-                {/if}
-              </span>
-            </div>
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
 
   {#if loading}
     <p class="empty">Loading emulator profile…</p>
@@ -375,108 +279,5 @@
     }
   }
 
-  .actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .debug-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--muted);
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
-    display: grid;
-    place-items: center;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .debug-btn:hover {
-    color: var(--text);
-    background: var(--surface-muted);
-  }
-
-  .debug-btn svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .debug-panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px;
-    margin-bottom: 12px;
-  }
-
-  .debug-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-  }
-
-  .debug-header h3 {
-    margin: 0;
-    font-size: 1rem;
-  }
-
-  .path-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .path-list li {
-    display: flex;
-    gap: 10px;
-    padding: 8px;
-    border-radius: 8px;
-    background: var(--surface-muted);
-    font-size: 0.9rem;
-    align-items: flex-start;
-  }
-
-  .path-list li.valid {
-    border-left: 3px solid #10b981;
-  }
-
-  .path-list li.invalid {
-    border-left: 3px solid #ef4444;
-  }
-
-  .path-details {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    overflow: hidden;
-  }
-
-  .path {
-    font-family: monospace;
-    word-break: break-all;
-  }
-
-  .error {
-    font-size: 0.8rem;
-    color: var(--muted);
-  }
-
-  .icon-success {
-    width: 20px;
-    height: 20px;
-    color: #10b981;
-  }
-
-  .icon-error {
-    width: 20px;
-    height: 20px;
-    color: #ef4444;
-  }
+  /* Debug styles removed */
 </style>

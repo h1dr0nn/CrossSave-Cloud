@@ -1,7 +1,7 @@
 mod api;
 mod core;
 
-use api::explorer_api::{check_path_status, scan_save_files};
+use api::explorer_api::{check_path_status, open_folder, scan_save_files};
 use api::history_api::{delete_history_item, get_history_item, list_history, rollback_version};
 use api::packager_api::{package_save, validate_paths};
 use api::profile_api::{delete_profile, get_profile, list_profiles, save_profile};
@@ -102,7 +102,8 @@ pub fn run() {
             get_storage_info,
             clear_history_cache,
             scan_save_files,
-            check_path_status
+            check_path_status,
+            open_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -126,118 +127,37 @@ fn default_profile_dirs_for_app(app: &tauri::App) -> (PathBuf, PathBuf) {
         } else {
             let retroarch_profile = profiles_dir.join("retroarch.json");
             if !retroarch_profile.exists() {
-                let default_profile = r#"{
-  "emulator_id": "retroarch",
-  "name": "RetroArch",
-  "default_save_paths": [
-    "/storage/emulated/0/RetroArch/saves",
-    "/sdcard/RetroArch/saves",
-    "/storage/sdcard1/RetroArch/saves",
-    "/mnt/media_rw/sdcard1/RetroArch/saves"
-  ],
-  "file_patterns": ["*.srm", "*.sav", "*.state"]
-}"#;
+                let default_profile = include_str!("../resources/profiles/retroarch.json");
                 let _ = std::fs::write(&retroarch_profile, default_profile);
             }
 
             let drastic_profile = profiles_dir.join("drastic.json");
             if !drastic_profile.exists() {
-                let default_profile = r#"{
-  "emulator_id": "drastic",
-  "name": "DraStic (DS)",
-  "default_save_paths": [
-    "/storage/emulated/0/DraStic/backup",
-    "/sdcard/DraStic/backup",
-    "/storage/sdcard1/DraStic/backup",
-    "/mnt/media_rw/sdcard1/DraStic/backup"
-  ],
-  "file_patterns": ["*.dsv"]
-}"#;
+                let default_profile = include_str!("../resources/profiles/drastic.json");
                 let _ = std::fs::write(&drastic_profile, default_profile);
             }
 
             let ppsspp_profile = profiles_dir.join("ppsspp.json");
             if !ppsspp_profile.exists() {
-                let default_profile = r#"{
-  "emulator_id": "ppsspp",
-  "name": "PPSSPP (PSP)",
-  "default_save_paths": [
-    "/storage/emulated/0/PSP/SAVEDATA",
-    "/sdcard/PSP/SAVEDATA",
-    "/storage/sdcard1/PSP/SAVEDATA",
-    "/mnt/media_rw/sdcard1/PSP/SAVEDATA"
-  ],
-  "file_patterns": ["*.ini", "PARAM.SFO"]
-}"#;
+                let default_profile = include_str!("../resources/profiles/ppsspp.json");
                 let _ = std::fs::write(&ppsspp_profile, default_profile);
-            }
-
-            let myboy_profile = profiles_dir.join("myboy.json");
-            if !myboy_profile.exists() {
-                let default_profile = r#"{
-  "emulator_id": "myboy",
-  "name": "MyBoy! (GBA)",
-  "default_save_paths": [
-    "/storage/emulated/0/MyBoy/save",
-    "/sdcard/MyBoy/save",
-    "/storage/sdcard1/MyBoy/save",
-    "/mnt/media_rw/sdcard1/MyBoy/save"
-  ],
-  "file_patterns": ["*.sav", "*.st*"]
-}"#;
-                let _ = std::fs::write(&myboy_profile, default_profile);
             }
 
             let duckstation_profile = profiles_dir.join("duckstation.json");
             if !duckstation_profile.exists() {
-                let default_profile = r#"{
-  "emulator_id": "duckstation",
-  "name": "DuckStation (PS1)",
-  "default_save_paths": [
-    "/storage/emulated/0/duckstation/memcards",
-    "/sdcard/duckstation/memcards",
-    "/storage/sdcard1/duckstation/memcards",
-    "/mnt/media_rw/sdcard1/duckstation/memcards"
-  ],
-  "file_patterns": ["*.mcd", "*.mcr"]
-}"#;
+                let default_profile = include_str!("../resources/profiles/duckstation.json");
                 let _ = std::fs::write(&duckstation_profile, default_profile);
             }
 
             let aethersx2_profile = profiles_dir.join("aethersx2.json");
             if !aethersx2_profile.exists() {
-                let default_profile = r#"{
-  "emulator_id": "aethersx2",
-  "name": "AetherSX2 (PS2)",
-  "default_save_paths": [
-    "/storage/emulated/0/AetherSX2/memcards",
-    "/sdcard/AetherSX2/memcards",
-    "/storage/emulated/0/Android/data/xyz.aethersx2.android/files/memcards",
-    "/storage/sdcard1/AetherSX2/memcards",
-    "/mnt/media_rw/sdcard1/AetherSX2/memcards"
-  ],
-  "file_patterns": ["*.ps2"]
-}"#;
+                let default_profile = include_str!("../resources/profiles/aethersx2.json");
                 let _ = std::fs::write(&aethersx2_profile, default_profile);
             }
 
             let dolphin_profile = profiles_dir.join("dolphin.json");
             if !dolphin_profile.exists() {
-                let default_profile = r#"{
-  "emulator_id": "dolphin",
-  "name": "Dolphin (GC/Wii)",
-  "default_save_paths": [
-    "/storage/emulated/0/dolphin-emu/GC",
-    "/sdcard/dolphin-emu/GC",
-    "/storage/sdcard1/dolphin-emu/GC",
-    "/mnt/media_rw/sdcard1/dolphin-emu/GC",
-    "/storage/emulated/0/dolphin-emu/Wii/title/00010000",
-    "/sdcard/dolphin-emu/Wii/title/00010000",
-    "/storage/sdcard1/dolphin-emu/Wii/title/00010000",
-    "/mnt/media_rw/sdcard1/dolphin-emu/Wii/title/00010000"
-  ],
-  "file_patterns": ["*.gci", "*.sav", "*.bin"]
-}"#;
+                let default_profile = include_str!("../resources/profiles/dolphin.json");
                 let _ = std::fs::write(&dolphin_profile, default_profile);
             }
         }

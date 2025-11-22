@@ -153,3 +153,7 @@ export interface PathStatus {
 export function checkPathStatus(emulatorId: string): Promise<PathStatus[]> {
   return invoke("check_path_status", { emulatorId });
 }
+
+export function openFolder(path: string): Promise<void> {
+  return invoke("open_folder", { path });
+}

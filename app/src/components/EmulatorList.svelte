@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
+  import { getEmulatorIcon } from "../lib/emulatorIcons";
   import type { EmulatorProfile } from "../lib/api";
 
   export let emulators: EmulatorProfile[] = [];
@@ -26,14 +27,7 @@
         <span class="blur-plate" aria-hidden="true"></span>
         <div class="button-surface">
           <div class="icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M5 7.5A2.5 2.5 0 0 1 7.5 5h9A2.5 2.5 0 0 1 19 7.5v9A2.5 2.5 0 0 1 16.5 19h-9A2.5 2.5 0 0 1 5 16.5Zm2.5-.5a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5Z"
-                fill="currentColor"
-              />
-              <path d="M9.75 11.25h4.5v1.5h-4.5Z" fill="#10b981" />
-              <path d="M9.75 14.25h2.5v1.5h-2.5Z" fill="#10b981" />
-            </svg>
+            {@html getEmulatorIcon(emulator.emulator_id)}
           </div>
           <div class="text">
             <span>{emulator.name}</span>
@@ -140,11 +134,13 @@
     place-items: center;
     color: var(--text);
     background: var(--surface-muted);
+    overflow: hidden;
   }
 
-  .icon svg {
+  .icon :global(svg) {
     width: 100%;
     height: 100%;
+    object-fit: contain;
   }
 
   .text {

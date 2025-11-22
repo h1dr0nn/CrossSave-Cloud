@@ -1,10 +1,14 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { createEventDispatcher } from "svelte";
 
   import type { GameEntry } from "../lib/uiTypes";
 
+  const dispatch = createEventDispatcher<{ reload: void }>();
+
   export let games: GameEntry[] = [];
   export let emulatorName = "";
+  export let loading = false;
 
   const formatter = new Intl.DateTimeFormat(undefined, {
     year: "numeric",
@@ -29,7 +33,32 @@
       <p class="eyebrow">Games</p>
       <h2>{emulatorName || "Choose an emulator"}</h2>
     </div>
-    <span class="badge">{games.length} titles</span>
+    <div class="actions">
+      <button
+        class="icon-button"
+        class:spinning={loading}
+        on:click={() => dispatch("reload")}
+        disabled={loading}
+        title="Reload games"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M23 4v6h-6" />
+          <path d="M1 20v-6h6" />
+          <path
+            d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
+          />
+        </svg>
+      </button>
+      <span class="badge">{games.length} titles</span>
+    </div>
   </header>
 
   {#if games.length === 0}
@@ -39,33 +68,50 @@
       {#each games as game}
         <button class="card" on:click={() => openGame(game.id)}>
           <div class="icon" data-variant={game.icon}>
-            {#if game.icon === "console"}
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect
-                  x="4"
-                  y="8"
-                  width="16"
-                  height="8"
-                  rx="2"
-                  fill="var(--card-contrast)"
-                />
-                <path d="M9.5 11h5v2h-5z" fill="#22c55e" />
-                <circle cx="8" cy="12" r="1" fill="#22c55e" />
-                <circle cx="16" cy="12" r="1" fill="#22c55e" />
-              </svg>
-            {:else if game.icon === "spark"}
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M12 3 9.5 11h-5L10 13l-2.5 8L12 15l4.5 6-2.5-8 5.5-2h-5Z"
-                  fill="#0ea5e9"
-                />
-              </svg>
-            {:else}
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="8" fill="#6366f1" />
-                <circle cx="12" cy="12" r="3" fill="#e0f2fe" />
-              </svg>
-            {/if}
+            <svg
+              viewBox="0 0 48 48"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <defs>
+                <linearGradient
+                  id="grad-{game.id}"
+                  x1="0"
+                  y1="0"
+                  x2="48"
+                  y2="48"
+                >
+                  {#if game.icon === "console"}
+                    <stop offset="0%" stop-color="#a78bfa" />
+                    <stop offset="100%" stop-color="#818cf8" />
+                  {:else if game.icon === "spark"}
+                    <stop offset="0%" stop-color="#fbbf24" />
+                    <stop offset="100%" stop-color="#f97316" />
+                  {:else}
+                    <stop offset="0%" stop-color="#c084fc" />
+                    <stop offset="100%" stop-color="#f472b6" />
+                  {/if}
+                </linearGradient>
+              </defs>
+              <rect
+                width="48"
+                height="48"
+                rx="12"
+                fill="url(#grad-{game.id})"
+              />
+              <text
+                x="24"
+                y="24"
+                text-anchor="middle"
+                dominant-baseline="central"
+                fill="white"
+                font-size="20"
+                font-weight="700"
+                font-family="system-ui, -apple-system, sans-serif"
+              >
+                {game.name.charAt(0).toUpperCase()}
+              </text>
+            </svg>
           </div>
           <div class="meta">
             <strong>{game.name}</strong>
@@ -232,6 +278,50 @@
   @media (min-width: 1180px) {
     .grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .icon-button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .icon-button:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--surface-muted);
+  }
+
+  .icon-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .icon-button svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .spinning svg {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
     }
   }
 </style>

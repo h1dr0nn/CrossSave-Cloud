@@ -71,6 +71,21 @@
   function close() {
     dispatch("close");
   }
+
+  $: if (typeof document !== "undefined") {
+    if (open) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+  }
+
+  import { onDestroy } from "svelte";
+  onDestroy(() => {
+    if (typeof document !== "undefined") {
+      document.body.style.overflow = "";
+    }
+  });
 </script>
 
 {#if open && primary}

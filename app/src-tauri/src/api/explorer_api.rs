@@ -125,3 +125,50 @@ pub async fn check_path_status(
 
     Ok(statuses)
 }
+
+#[tauri::command]
+pub async fn open_folder(path: String) -> Result<(), String> {
+    use std::process::Command;
+    
+    let path_buf = PathBuf::from(&path);
+    
+    // Check if path exists
+    if !path_buf.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
+    }
+    
+    #[cfg(target_os = "android")]
+    {
+        // On Android, we need to use an Intent to open the file manager
+        // This is handled by tauri-plugin-opener, but for directories we need a different approach
+        // For now, return an error suggesting the user to use a file manager app
+        return Err("Please use your device's file manager app to browse this folder".to_string());
+    }
+    
+    info!("[EXPLORER] Opened folder: {}", path);
+    Ok(())
+}

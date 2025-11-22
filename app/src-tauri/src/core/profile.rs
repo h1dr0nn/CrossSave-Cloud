@@ -19,8 +19,6 @@ pub enum ProfileError {
     ProfileFileRead(String, String),
     #[error("failed to parse profile file {0}: {1}")]
     ProfileParse(String, String),
-    #[error("home directory not found for path {0}")]
-    HomeDirectoryUnavailable(String),
     #[error("invalid profile: {0}")]
     InvalidProfile(String),
     #[error("io error: {0}")]
@@ -212,15 +210,23 @@ impl ProfileManager {
 
     fn expand_home(&self, path: &str) -> Result<PathBuf, ProfileError> {
         if path == "~" || path.starts_with("~/") {
-            let home = std::env::var("HOME")
-                .map_err(|_| ProfileError::HomeDirectoryUnavailable(path.to_string()))?;
-            let suffix = path.trim_start_matches('~').trim_start_matches('/');
-            let expanded = if suffix.is_empty() {
-                PathBuf::from(home)
-            } else {
-                Path::new(&home).join(suffix)
-            };
-            Ok(expanded)
+            match std::env::var("HOME") {
+                Ok(home) => {
+                    let suffix = path.trim_start_matches('~').trim_start_matches('/');
+                    let expanded = if suffix.is_empty() {
+                        PathBuf::from(home)
+                    } else {
+                        Path::new(&home).join(suffix)
+                    };
+                    Ok(expanded)
+                }
+                Err(_) => {
+                    // If HOME is not set (e.g. Android), just return the path as is
+                    // This prevents the app from crashing, even if the path is invalid
+                    debug!("[PROFILE] HOME not set, keeping path as is: {}", path);
+                    Ok(PathBuf::from(path))
+                }
+            }
         } else {
             Ok(PathBuf::from(path))
         }

@@ -1,73 +1,113 @@
-<script context="module" lang="ts">
-  import type { GameEntry } from "../lib/uiTypes";
-  import type { EmulatorProfile } from "../lib/api";
-
-  const cachedProfiles: EmulatorProfile[] = [];
-  let cachedGames = new Map<string, GameEntry[]>();
-  let cachedSelectedEmulatorId: string | null = null;
-</script>
-
 <script lang="ts">
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
 
   import Sidebar from "./Sidebar.svelte";
+  import type { EmulatorProfile } from "../lib/api";
   import GameList from "./GameList.svelte";
   import ProfilePreview from "./ProfilePreview.svelte";
   import AppHeader from "./AppHeader.svelte";
+  import ScanPopup from "./ScanPopup.svelte";
   import { listProfiles, scanSaveFiles } from "../lib/api";
+  import {
+    profilesStore,
+    gamesCacheStore,
+    selectedEmulatorIdStore,
+  } from "../lib/stores";
+  import type { GameEntry } from "../lib/uiTypes";
 
   const DESKTOP_BREAKPOINT = 900;
 
-  let profiles: EmulatorProfile[] = [];
-  let selectedEmulatorId: string | null = null;
   let viewportWidth = 0; // Default to 0 to assume mobile first and avoid sidebar flash
   let drawerOpen = false;
   let loadingProfiles = true;
 
+  // Scan state
+  let showScanPopup = false;
+  let isScanning = false;
+  let scanProgress = "";
+  let loadingGames = false;
+
   onMount(async () => {
-    if (cachedProfiles.length > 0) {
-      profiles = [...cachedProfiles];
-      selectedEmulatorId =
-        cachedSelectedEmulatorId ?? cachedProfiles[0]?.emulator_id ?? null;
-      if (selectedEmulatorId) {
-        loadGames(selectedEmulatorId);
-      }
+    const startTime = Date.now();
+
+    // Check if we already have profiles in store
+    if ($profilesStore.length > 0) {
       loadingProfiles = false;
+      if (!$selectedEmulatorIdStore) {
+        selectedEmulatorIdStore.set($profilesStore[0].emulator_id);
+      }
+      // If we have a selected emulator, ensure its games are loaded (or at least checked)
+      if ($selectedEmulatorIdStore) {
+        loadGames($selectedEmulatorIdStore);
+      }
       return;
     }
 
     try {
-      const loadedProfiles = await listProfiles();
-      profiles = loadedProfiles;
-      cachedProfiles.push(...loadedProfiles);
+      // Add a timeout to prevent infinite loading
+      const timeoutPromise = new Promise<EmulatorProfile[]>((_, reject) =>
+        setTimeout(() => reject(new Error("Profile load timeout")), 5000)
+      );
+
+      const loadedProfiles = await Promise.race([
+        listProfiles(),
+        timeoutPromise,
+      ]);
+
+      profilesStore.set(loadedProfiles);
+
       if (loadedProfiles.length > 0) {
-        selectedEmulatorId = loadedProfiles[0].emulator_id;
-        cachedSelectedEmulatorId = selectedEmulatorId;
-        loadGames(selectedEmulatorId);
+        if (!$selectedEmulatorIdStore) {
+          selectedEmulatorIdStore.set(loadedProfiles[0].emulator_id);
+        }
+
+        // Check if this is the very first time the app is launched
+        const hasLaunchedBefore = localStorage.getItem("hasLaunchedBefore");
+
+        if (!hasLaunchedBefore) {
+          // First launch ever - show popup
+          showScanPopup = true;
+          localStorage.setItem("hasLaunchedBefore", "true");
+        } else {
+          // Subsequent launches - auto-scan in background
+          scanAll();
+        }
       }
     } catch (error) {
       console.error("Failed to load emulator profiles", error);
+      // If timeout or error, ensure we stop loading
     } finally {
+      // Ensure minimum 1s loading time
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, 1000 - elapsed);
+
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
+
       loadingProfiles = false;
     }
   });
 
   $: selectedProfile =
-    profiles.find((p) => p.emulator_id === selectedEmulatorId) ?? null;
+    $profilesStore.find((p) => p.emulator_id === $selectedEmulatorIdStore) ??
+    null;
   $: isDrawerMode = viewportWidth < DESKTOP_BREAKPOINT;
   $: sidebarVisible = drawerOpen || !isDrawerMode;
-  $: selectedGames = selectedEmulatorId
-    ? (cachedGames.get(selectedEmulatorId) ?? [])
+  $: selectedGames = $selectedEmulatorIdStore
+    ? ($gamesCacheStore.get($selectedEmulatorIdStore) ?? [])
     : [];
 
   $: if (!isDrawerMode && drawerOpen) {
     drawerOpen = false;
   }
 
-  async function loadGames(emulatorId: string) {
-    if (cachedGames.has(emulatorId)) return;
+  async function loadGames(emulatorId: string, force = false) {
+    if (!force && $gamesCacheStore.has(emulatorId)) return;
 
+    const startTime = Date.now();
+    loadingGames = true;
     try {
       const files = await scanSaveFiles(emulatorId);
       const games: GameEntry[] = files.map((file, index) => ({
@@ -85,18 +125,47 @@
           new Date(a.lastModified).getTime()
       );
 
-      cachedGames.set(emulatorId, games);
-      // Trigger reactivity
-      cachedGames = cachedGames;
+      gamesCacheStore.update((cache) => {
+        const newCache = new Map(cache);
+        newCache.set(emulatorId, games);
+        return newCache;
+      });
     } catch (error) {
       console.error(`Failed to scan files for ${emulatorId}`, error);
+    } finally {
+      // Ensure minimum 1s loading time
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, 1000 - elapsed);
+
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
+
+      loadingGames = false;
+    }
+  }
+
+  async function scanAll() {
+    isScanning = true;
+    try {
+      const profiles = $profilesStore;
+      for (let i = 0; i < profiles.length; i++) {
+        const profile = profiles[i];
+        scanProgress = `Scanning ${profile.name} (${i + 1}/${profiles.length})...`;
+        await loadGames(profile.emulator_id, true);
+      }
+    } catch (e) {
+      console.error("Scan all failed", e);
+    } finally {
+      isScanning = false;
+      showScanPopup = false;
     }
   }
 
   function selectEmulator(id: string) {
-    selectedEmulatorId = id;
-    cachedSelectedEmulatorId = id;
-    loadGames(id);
+    selectedEmulatorIdStore.set(id);
+    // Always force reload on tab switch as requested
+    loadGames(id, true);
     if (isDrawerMode) {
       drawerOpen = false;
     }
@@ -113,12 +182,25 @@
 
 <svelte:window bind:innerWidth={viewportWidth} />
 
-<div class="shell" data-mobile={isDrawerMode}>
+{#if showScanPopup}
+  <ScanPopup
+    scanning={isScanning}
+    progress={scanProgress}
+    on:scan={scanAll}
+    on:cancel={() => (showScanPopup = false)}
+  />
+{/if}
+
+<div
+  class="shell"
+  data-mobile={isDrawerMode}
+  class:locked={isDrawerMode && drawerOpen}
+>
   <Sidebar
-    emulators={profiles}
-    selectedId={selectedEmulatorId}
+    emulators={$profilesStore}
+    selectedId={$selectedEmulatorIdStore}
     isMobile={isDrawerMode}
-    open={sidebarVisible}
+    isOpen={sidebarVisible}
     loading={loadingProfiles}
     on:select={(event) => selectEmulator(event.detail)}
     on:close={() => (drawerOpen = false)}
@@ -161,8 +243,12 @@
           <GameList
             games={selectedGames}
             emulatorName={selectedProfile?.name ?? ""}
+            loading={loadingGames}
+            on:reload={() =>
+              $selectedEmulatorIdStore &&
+              loadGames($selectedEmulatorIdStore, true)}
           />
-          <ProfilePreview profile={selectedProfile} loading={loadingProfiles} />
+          <ProfilePreview profile={selectedProfile} />
         </div>
       </main>
     </div>
@@ -179,6 +265,12 @@
     color: var(--text);
     align-items: stretch;
     overflow: hidden;
+  }
+
+  .shell.locked .content-body {
+    overflow: hidden;
+    pointer-events: none;
+    user-select: none;
   }
 
   .content {
@@ -202,23 +294,19 @@
   }
 
   .content-body {
-    min-height: 0;
     flex: 1;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     scroll-behavior: smooth;
+    padding: clamp(16px, 3vw, 32px);
+    padding-top: max(clamp(16px, 3vw, 32px), env(safe-area-inset-top));
+    padding-bottom: max(clamp(16px, 3vw, 32px), env(safe-area-inset-bottom));
+    padding-left: max(clamp(16px, 3vw, 32px), env(safe-area-inset-left));
+    padding-right: max(clamp(16px, 3vw, 32px), env(safe-area-inset-right));
   }
 
   .header-wrapper {
-    position: sticky;
-    top: 0;
-    z-index: 12;
-    padding-top: max(clamp(16px, 3vw, 32px), env(safe-area-inset-top));
-    padding-left: max(clamp(16px, 3vw, 32px), env(safe-area-inset-left));
-    padding-right: max(clamp(16px, 3vw, 32px), env(safe-area-inset-right));
-    padding-bottom: 14px;
-    /* Ensure background covers content scrolling under */
-    background: linear-gradient(to bottom, var(--bg) 80%, transparent);
-    margin: 0 -1px; /* Fix sub-pixel gaps */
+    margin-bottom: clamp(12px, 1.5vw, 18px);
   }
 
   .content-body::-webkit-scrollbar {
@@ -236,9 +324,6 @@
     gap: 16px;
     align-items: start;
     min-height: 0;
-    padding-left: max(clamp(16px, 3vw, 32px), env(safe-area-inset-left));
-    padding-right: max(clamp(16px, 3vw, 32px), env(safe-area-inset-right));
-    padding-bottom: max(clamp(16px, 3vw, 32px), env(safe-area-inset-bottom));
   }
 
   @media (max-width: 899px) {
