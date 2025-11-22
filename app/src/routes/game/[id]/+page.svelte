@@ -1,7 +1,6 @@
 <script lang="ts">
+  import { page } from "$app/stores";
   import GameDetailView from "../../../components/GameDetailView.svelte";
-
-  export let params: { id: string };
 </script>
 
-<GameDetailView gameId={params.id} />
+<GameDetailView gameId={$page.params.id ?? ""} />

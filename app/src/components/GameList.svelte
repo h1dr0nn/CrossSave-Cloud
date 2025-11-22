@@ -11,7 +11,7 @@
     month: "short",
     day: "numeric",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
   });
 
   function toReadable(date: string) {
@@ -19,7 +19,7 @@
   }
 
   function openGame(id: string) {
-    goto(`/game/${id}`);
+    goto(`/game/${encodeURIComponent(id)}`);
   }
 </script>
 
@@ -41,14 +41,24 @@
           <div class="icon" data-variant={game.icon}>
             {#if game.icon === "console"}
               <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="4" y="8" width="16" height="8" rx="2" fill="var(--card-contrast)" />
+                <rect
+                  x="4"
+                  y="8"
+                  width="16"
+                  height="8"
+                  rx="2"
+                  fill="var(--card-contrast)"
+                />
                 <path d="M9.5 11h5v2h-5z" fill="#22c55e" />
                 <circle cx="8" cy="12" r="1" fill="#22c55e" />
                 <circle cx="16" cy="12" r="1" fill="#22c55e" />
               </svg>
             {:else if game.icon === "spark"}
               <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 3 9.5 11h-5L10 13l-2.5 8L12 15l4.5 6-2.5-8 5.5-2h-5Z" fill="#0ea5e9" />
+                <path
+                  d="M12 3 9.5 11h-5L10 13l-2.5 8L12 15l4.5 6-2.5-8 5.5-2h-5Z"
+                  fill="#0ea5e9"
+                />
               </svg>
             {:else}
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -62,7 +72,13 @@
             <span>{toReadable(game.lastModified)}</span>
           </div>
           <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            <path
+              d="m9 5 7 7-7 7"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
           </svg>
         </button>
       {/each}
@@ -134,14 +150,22 @@
     border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
     border-radius: 16px;
     padding: 14px 16px;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 92%, transparent), var(--surface));
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-muted) 92%, transparent),
+      var(--surface)
+    );
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 12px;
     text-align: left;
     cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.2s ease;
+    transition:
+      transform 0.18s ease,
+      box-shadow 0.18s ease,
+      border-color 0.18s ease,
+      background 0.2s ease;
     color: var(--text);
     box-shadow: 0 8px 18px color-mix(in srgb, var(--shadow) 30%, transparent);
   }
@@ -149,7 +173,8 @@
   .card:hover {
     transform: translateY(-2px);
     border-color: var(--accent);
-    box-shadow: 0 16px 30px color-mix(in srgb, var(--accent-strong) 22%, transparent);
+    box-shadow: 0 16px 30px
+      color-mix(in srgb, var(--accent-strong) 22%, transparent);
   }
 
   .icon {

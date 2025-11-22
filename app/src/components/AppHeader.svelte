@@ -5,20 +5,36 @@
   export let showBack = false;
   export let onMenu: (() => void) | undefined;
   export let onBack: (() => void) | undefined;
+  export let sticky = true;
 </script>
 
-<header class="app-header" aria-label={title}>
+<header class="app-header" class:sticky aria-label={title}>
   <div class="leading">
     {#if showMenu}
-      <button class="icon-button" on:click={onMenu} aria-label="Open navigation menu">
+      <button
+        class="icon-button"
+        on:click={onMenu}
+        aria-label="Open navigation menu"
+      >
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          <path
+            d="M4 7h16M4 12h16M4 17h16"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
         </svg>
       </button>
     {:else if showBack}
       <button class="icon-button" on:click={onBack} aria-label="Go back">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M14.5 6 8.5 12l6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          <path
+            d="M14.5 6 8.5 12l6 6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
         </svg>
       </button>
     {/if}
@@ -42,17 +58,24 @@
     grid-template-columns: 1fr auto;
     align-items: center;
     gap: 12px;
-    padding: 14px 18px;
+    padding: max(10px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right)) clamp(10px, 2vw, 14px)
+      max(12px, env(safe-area-inset-left));
     border-radius: var(--radius);
+    background: rgba(var(--surface-rgb), 0.8);
     background: color-mix(in srgb, var(--surface) 92%, transparent);
+    border: 1px solid rgba(var(--border-rgb), 0.5);
     border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
     box-shadow: var(--shadow-soft);
     backdrop-filter: blur(16px);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .app-header.sticky {
     position: sticky;
     top: 0;
     z-index: 12;
-    min-width: 0;
-    overflow: hidden;
   }
 
   .leading {

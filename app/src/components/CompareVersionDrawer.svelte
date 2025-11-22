@@ -15,7 +15,10 @@
   $: primary = selected ?? sorted[0] ?? null;
   $: secondary = determineSecondary(primary, sorted);
 
-  function determineSecondary(primaryEntry: HistoryEntry | null, list: HistoryEntry[]) {
+  function determineSecondary(
+    primaryEntry: HistoryEntry | null,
+    list: HistoryEntry[]
+  ) {
     if (!primaryEntry || list.length < 2) return list[1] ?? null;
     const index = list.findIndex(
       (item) => item.metadata.version_id === primaryEntry.metadata.version_id
@@ -91,20 +94,32 @@
       <header>
         <div>
           <p class="eyebrow">Compare Versions</p>
-          <h2>{primary.metadata.version_id} vs {secondary?.metadata.version_id ?? "—"}</h2>
+          <h2>
+            {primary.metadata.version_id} vs {secondary?.metadata.version_id ??
+              "—"}
+          </h2>
         </div>
-        <button class="close" on:click={close} aria-label="Close compare">×</button>
+        <button class="close" on:click={close} aria-label="Close compare"
+          >×</button
+        >
       </header>
 
       <div class="grid">
         <div class="metric">
           <p class="label">Hash</p>
           <div class="compare">
-            <span class={diffClass(primary.metadata.hash, secondary?.metadata.hash)}>
+            <span
+              class={diffClass(primary.metadata.hash, secondary?.metadata.hash)}
+            >
               {shortHash(primary.metadata.hash)}
             </span>
             <span class="divider">→</span>
-            <span class={diffClass(secondary?.metadata.hash ?? "", primary.metadata.hash)}>
+            <span
+              class={diffClass(
+                secondary?.metadata.hash ?? "",
+                primary.metadata.hash
+              )}
+            >
               {shortHash(secondary?.metadata.hash)}
             </span>
           </div>
@@ -113,23 +128,33 @@
         <div class="metric">
           <p class="label">File count</p>
           <div class="compare">
-            <span class={diffClass(fileCount(primary), fileCount(secondary))}>{fileCount(primary)}</span>
+            <span class={diffClass(fileCount(primary), fileCount(secondary))}
+              >{fileCount(primary)}</span
+            >
             <span class="divider">→</span>
-            <span class={diffClass(fileCount(secondary), fileCount(primary))}>{fileCount(secondary)}</span>
+            <span class={diffClass(fileCount(secondary), fileCount(primary))}
+              >{fileCount(secondary)}</span
+            >
           </div>
         </div>
 
         <div class="metric">
           <p class="label">Total size</p>
           <div class="compare">
-            <span class={diffClass(sizeValue(primary), sizeValue(secondary))}>{totalSize(primary)}</span>
+            <span class={diffClass(sizeValue(primary), sizeValue(secondary))}
+              >{totalSize(primary)}</span
+            >
             <span class="divider">→</span>
-            <span class={diffClass(sizeValue(secondary), sizeValue(primary))}>{totalSize(secondary)}</span>
+            <span class={diffClass(sizeValue(secondary), sizeValue(primary))}
+              >{totalSize(secondary)}</span
+            >
           </div>
         </div>
       </div>
 
-      <p class="note">Comparing the two most recent versions near your selection.</p>
+      <p class="note">
+        Comparing the two most recent versions near your selection.
+      </p>
     </div>
   </div>
 {/if}
@@ -153,6 +178,7 @@
     border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
     border-radius: 18px;
     padding: 16px 18px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
   }
 
@@ -209,8 +235,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      "Liberation Mono", "Courier New", monospace;
+    font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco,
+      Consolas, "Liberation Mono", "Courier New", monospace;
   }
 
   .divider {

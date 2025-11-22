@@ -132,3 +132,24 @@ export function getStorageInfo(): Promise<StorageInfo> {
 export function clearHistoryCache(): Promise<void> {
   return invoke("clear_history_cache");
 }
+export interface ScannedFile {
+  path: string;
+  name: string;
+  size: number;
+  modified: number;
+}
+
+export function scanSaveFiles(emulatorId: string): Promise<ScannedFile[]> {
+  return invoke("scan_save_files", { emulatorId });
+}
+
+export interface PathStatus {
+  path: string;
+  exists: boolean;
+  is_dir: boolean;
+  error?: string;
+}
+
+export function checkPathStatus(emulatorId: string): Promise<PathStatus[]> {
+  return invoke("check_path_status", { emulatorId });
+}

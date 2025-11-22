@@ -1,95 +1,114 @@
+<script context="module" lang="ts">
+  import type { GameEntry } from "../lib/uiTypes";
+  import type { EmulatorProfile } from "../lib/api";
+
+  const cachedProfiles: EmulatorProfile[] = [];
+  let cachedGames = new Map<string, GameEntry[]>();
+  let cachedSelectedEmulatorId: string | null = null;
+</script>
+
 <script lang="ts">
-import { onMount } from "svelte";
-import { goto } from "$app/navigation";
+  import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
 
-import Sidebar from "./Sidebar.svelte";
-import GameList from "./GameList.svelte";
-import ProfilePreview from "./ProfilePreview.svelte";
-import AppHeader from "./AppHeader.svelte";
-import type { GameEntry } from "../lib/uiTypes";
-import { listProfiles, type EmulatorProfile } from "../lib/api";
+  import Sidebar from "./Sidebar.svelte";
+  import GameList from "./GameList.svelte";
+  import ProfilePreview from "./ProfilePreview.svelte";
+  import AppHeader from "./AppHeader.svelte";
+  import { listProfiles, scanSaveFiles } from "../lib/api";
 
-const cachedProfiles: EmulatorProfile[] = [];
-const cachedGames = new Map<string, GameEntry[]>();
-let cachedSelectedEmulatorId: string | null = null;
+  const DESKTOP_BREAKPOINT = 900;
 
-const DESKTOP_BREAKPOINT = 900;
+  let profiles: EmulatorProfile[] = [];
+  let selectedEmulatorId: string | null = null;
+  let viewportWidth = 0; // Default to 0 to assume mobile first and avoid sidebar flash
+  let drawerOpen = false;
+  let loadingProfiles = true;
 
-let profiles: EmulatorProfile[] = [];
-let selectedEmulatorId: string | null = null;
-let viewportWidth = 960;
-let drawerOpen = false;
-let loadingProfiles = true;
-
-onMount(async () => {
-  if (cachedProfiles.length > 0) {
-    profiles = [...cachedProfiles];
-    selectedEmulatorId = cachedSelectedEmulatorId ?? cachedProfiles[0]?.emulator_id ?? null;
-    preloadGames(cachedProfiles);
-    loadingProfiles = false;
-    return;
-  }
-
-  try {
-    const loadedProfiles = await listProfiles();
-    profiles = loadedProfiles;
-    cachedProfiles.push(...loadedProfiles);
-    if (loadedProfiles.length > 0) {
-      selectedEmulatorId = loadedProfiles[0].emulator_id;
-      cachedSelectedEmulatorId = selectedEmulatorId;
-      preloadGames(loadedProfiles);
+  onMount(async () => {
+    if (cachedProfiles.length > 0) {
+      profiles = [...cachedProfiles];
+      selectedEmulatorId =
+        cachedSelectedEmulatorId ?? cachedProfiles[0]?.emulator_id ?? null;
+      if (selectedEmulatorId) {
+        loadGames(selectedEmulatorId);
+      }
+      loadingProfiles = false;
+      return;
     }
-  } catch (error) {
-    console.error("Failed to load emulator profiles", error);
-  } finally {
-    loadingProfiles = false;
-  }
-});
 
-$: selectedProfile = profiles.find((p) => p.emulator_id === selectedEmulatorId) ?? null;
-$: isDrawerMode = viewportWidth < DESKTOP_BREAKPOINT;
-$: sidebarVisible = drawerOpen || !isDrawerMode;
-$: selectedGames = selectedEmulatorId ? cachedGames.get(selectedEmulatorId) ?? [] : [];
-
-$: if (!isDrawerMode && drawerOpen) {
-  drawerOpen = false;
-}
-
-function preloadGames(items: EmulatorProfile[]) {
-  items.forEach((profile) => {
-    if (!cachedGames.has(profile.emulator_id)) {
-      cachedGames.set(profile.emulator_id, generateGames(profile));
+    try {
+      const loadedProfiles = await listProfiles();
+      profiles = loadedProfiles;
+      cachedProfiles.push(...loadedProfiles);
+      if (loadedProfiles.length > 0) {
+        selectedEmulatorId = loadedProfiles[0].emulator_id;
+        cachedSelectedEmulatorId = selectedEmulatorId;
+        loadGames(selectedEmulatorId);
+      }
+    } catch (error) {
+      console.error("Failed to load emulator profiles", error);
+    } finally {
+      loadingProfiles = false;
     }
   });
-}
 
-function generateGames(profile: EmulatorProfile): GameEntry[] {
-  const baseName = profile.name.split(" ")[0] || profile.name;
-  const now = Date.now();
-  return Array.from({ length: 6 }, (_, index) => ({
-    id: `${profile.emulator_id}-game-${index + 1}`,
-    emulatorId: profile.emulator_id,
-    name: `${baseName} Save ${index + 1}`,
-    icon: index % 3 === 0 ? "spark" : index % 2 === 0 ? "disc" : "console",
-    lastModified: new Date(now - (index + 1) * 36 * 60 * 60 * 1000).toISOString()
-  }));
-}
+  $: selectedProfile =
+    profiles.find((p) => p.emulator_id === selectedEmulatorId) ?? null;
+  $: isDrawerMode = viewportWidth < DESKTOP_BREAKPOINT;
+  $: sidebarVisible = drawerOpen || !isDrawerMode;
+  $: selectedGames = selectedEmulatorId
+    ? (cachedGames.get(selectedEmulatorId) ?? [])
+    : [];
 
-function selectEmulator(id: string) {
-  selectedEmulatorId = id;
-  cachedSelectedEmulatorId = id;
-  if (isDrawerMode) {
+  $: if (!isDrawerMode && drawerOpen) {
     drawerOpen = false;
   }
-}
 
-function toggleDrawer() {
-  drawerOpen = !drawerOpen;
-}
+  async function loadGames(emulatorId: string) {
+    if (cachedGames.has(emulatorId)) return;
 
-function openSettings() {
-  goto("/settings", { keepFocus: true, noScroll: true });
-}
+    try {
+      const files = await scanSaveFiles(emulatorId);
+      const games: GameEntry[] = files.map((file, index) => ({
+        id: file.path, // Use path as ID
+        emulatorId: emulatorId,
+        name: file.name,
+        icon: index % 3 === 0 ? "spark" : index % 2 === 0 ? "disc" : "console", // Keep random icon for now
+        lastModified: new Date(file.modified).toISOString(),
+      }));
+
+      // Sort by modified desc
+      games.sort(
+        (a, b) =>
+          new Date(b.lastModified).getTime() -
+          new Date(a.lastModified).getTime()
+      );
+
+      cachedGames.set(emulatorId, games);
+      // Trigger reactivity
+      cachedGames = cachedGames;
+    } catch (error) {
+      console.error(`Failed to scan files for ${emulatorId}`, error);
+    }
+  }
+
+  function selectEmulator(id: string) {
+    selectedEmulatorId = id;
+    cachedSelectedEmulatorId = id;
+    loadGames(id);
+    if (isDrawerMode) {
+      drawerOpen = false;
+    }
+  }
+
+  function toggleDrawer() {
+    drawerOpen = !drawerOpen;
+  }
+
+  function openSettings() {
+    goto("/settings", { keepFocus: true, noScroll: true });
+  }
 </script>
 
 <svelte:window bind:innerWidth={viewportWidth} />
@@ -107,31 +126,42 @@ function openSettings() {
 
   <div class="content">
     <div class="content-surface">
-      <AppHeader
-        eyebrow="CrossSave Cloud"
-        title="Dashboard"
-        showMenu={isDrawerMode}
-        onMenu={toggleDrawer}
-        onBack={() => {}}
-      >
-        <button slot="actions" class="icon-button primary" on:click={openSettings} aria-label="Open settings">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M10.75 3.5h2.5l.58 2.25a5 5 0 0 1 1.4.82L17.5 6l1.75 2.76-1.72 1.26c.06.3.09.62.09.94 0 .32-.03.63-.09.93l1.72 1.27L17.5 16l-2.27-.57a5 5 0 0 1-1.4.82l-.58 2.25h-2.5l-.58-2.25a5 5 0 0 1-1.4-.82L6.5 16l-1.75-2.76 1.72-1.27A5 5 0 0 1 6.38 11c0-.32.03-.63.09-.93L4.75 8.76 6.5 6l2.27.57a5 5 0 0 1 1.4-.82Z"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <circle cx="12" cy="12" r="2.5" fill="currentColor" />
-          </svg>
-        </button>
-      </AppHeader>
-
       <main class="content-body">
+        <div class="header-wrapper">
+          <AppHeader
+            eyebrow="CrossSave Cloud"
+            title="Dashboard"
+            showMenu={isDrawerMode}
+            onMenu={toggleDrawer}
+            onBack={() => {}}
+            sticky={false}
+          >
+            <button
+              slot="actions"
+              class="icon-button primary"
+              on:click={openSettings}
+              aria-label="Open settings"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M10.75 3.5h2.5l.58 2.25a5 5 0 0 1 1.4.82L17.5 6l1.75 2.76-1.72 1.26c.06.3.09.62.09.94 0 .32-.03.63-.09.93l1.72 1.27L17.5 16l-2.27-.57a5 5 0 0 1-1.4.82l-.58 2.25h-2.5l-.58-2.25a5 5 0 0 1-1.4-.82L6.5 16l-1.75-2.76 1.72-1.27A5 5 0 0 1 6.38 11c0-.32.03-.63.09-.93L4.75 8.76 6.5 6l2.27.57a5 5 0 0 1 1.4-.82Z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <circle cx="12" cy="12" r="2.5" fill="currentColor" />
+              </svg>
+            </button>
+          </AppHeader>
+        </div>
+
         <div class="content-grid">
-          <GameList games={selectedGames} emulatorName={selectedProfile?.name ?? ""} />
+          <GameList
+            games={selectedGames}
+            emulatorName={selectedProfile?.name ?? ""}
+          />
           <ProfilePreview profile={selectedProfile} loading={loadingProfiles} />
         </div>
       </main>
@@ -163,13 +193,11 @@ function openSettings() {
 
   .content-surface {
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: 1fr;
     max-width: 1360px;
     margin: 0 auto;
     width: 100%;
     height: 100vh;
-    padding: clamp(16px, 2.5vw, 32px);
-    gap: 14px;
     overflow: hidden;
   }
 
@@ -177,9 +205,20 @@ function openSettings() {
     min-height: 0;
     flex: 1;
     overflow: auto;
-    padding-bottom: 6px;
-    scrollbar-width: thin;
     scroll-behavior: smooth;
+  }
+
+  .header-wrapper {
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    padding-top: max(clamp(16px, 3vw, 32px), env(safe-area-inset-top));
+    padding-left: max(clamp(16px, 3vw, 32px), env(safe-area-inset-left));
+    padding-right: max(clamp(16px, 3vw, 32px), env(safe-area-inset-right));
+    padding-bottom: 14px;
+    /* Ensure background covers content scrolling under */
+    background: linear-gradient(to bottom, var(--bg) 80%, transparent);
+    margin: 0 -1px; /* Fix sub-pixel gaps */
   }
 
   .content-body::-webkit-scrollbar {
@@ -197,6 +236,9 @@ function openSettings() {
     gap: 16px;
     align-items: start;
     min-height: 0;
+    padding-left: max(clamp(16px, 3vw, 32px), env(safe-area-inset-left));
+    padding-right: max(clamp(16px, 3vw, 32px), env(safe-area-inset-right));
+    padding-bottom: max(clamp(16px, 3vw, 32px), env(safe-area-inset-bottom));
   }
 
   @media (max-width: 899px) {

@@ -29,4 +29,9 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  build: {
+    target: ["es2015", "chrome60"], // Support older Android WebViews
+    minify: true,
+    cssMinify: true,
+  },
 }));

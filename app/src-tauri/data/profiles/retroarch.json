@@ -1,0 +1,12 @@
+{
+  "emulator_id": "retroarch",
+  "name": "RetroArch",
+  "default_save_paths": [
+    "/Users/user/.config/retroarch/saves"
+  ],
+  "file_patterns": [
+    "*.srm",
+    "*.sav",
+    "*.state"
+  ]
+}

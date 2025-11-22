@@ -85,7 +85,10 @@ impl SettingsManager {
             .map_err(|err| SettingsError::Serialization(err.to_string()))?;
         fs::write(&self.path, json).map_err(|err| SettingsError::Io(err.to_string()))?;
 
-        info!("[SETTINGS] Updated retention to {} (auto_delete={})", validated.retention_limit, validated.auto_delete);
+        info!(
+            "[SETTINGS] Updated retention to {} (auto_delete={})",
+            validated.retention_limit, validated.auto_delete
+        );
         Ok(validated)
     }
 
@@ -100,13 +103,6 @@ impl SettingsManager {
 
         Ok(settings)
     }
-}
-
-pub fn default_settings_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("data")
-        .join("config")
-        .join("settings.json")
 }
 
 pub fn default_retention_bounds() -> (usize, usize) {

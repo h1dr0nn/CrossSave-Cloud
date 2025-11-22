@@ -26,7 +26,7 @@
     savePath: "",
     patterns: defaultPatterns,
     useOverride: false,
-    overridePath: ""
+    overridePath: "",
   });
 
   let profileForm: ProfileFormState = createEmptyForm();
@@ -48,7 +48,9 @@
       settingsStore.setSelectedProfile(state.profiles[0].emulator_id);
     }
   }
-  $: selectedProfile = state.profiles.find((p) => p.emulator_id === state.selectedProfileId) ?? null;
+  $: selectedProfile =
+    state.profiles.find((p) => p.emulator_id === state.selectedProfileId) ??
+    null;
   $: if (state.appSettings) {
     retentionDraft = state.appSettings.retention_limit;
     autoDeleteDraft = state.appSettings.auto_delete;
@@ -62,7 +64,10 @@
     }
   }
 
-  function toFormState(profile: EmulatorProfile, overrides: Record<string, OverrideState>): ProfileFormState {
+  function toFormState(
+    profile: EmulatorProfile,
+    overrides: Record<string, OverrideState>
+  ): ProfileFormState {
     const override = overrides[profile.emulator_id];
     return {
       name: profile.name,
@@ -70,7 +75,7 @@
       savePath: profile.default_save_paths[0] ?? "",
       patterns: profile.file_patterns.join(", "),
       useOverride: override?.enabled ?? false,
-      overridePath: override?.path ?? ""
+      overridePath: override?.path ?? "",
     };
   }
 
@@ -92,7 +97,8 @@
       .split(/[,\n]/)
       .map((p) => p.trim())
       .filter(Boolean);
-    if (patterns.length === 0) return "Please provide at least one glob pattern";
+    if (patterns.length === 0)
+      return "Please provide at least one glob pattern";
     return null;
   }
 
@@ -112,14 +118,14 @@
       emulator_id: profileForm.emulatorId.trim(),
       name: profileForm.name.trim(),
       default_save_paths: [profileForm.savePath.trim()],
-      file_patterns: patterns
+      file_patterns: patterns,
     };
 
     await settingsStore.saveProfile(payload);
 
     settingsStore.setOverride(payload.emulator_id, {
       enabled: profileForm.useOverride,
-      path: profileForm.overridePath.trim()
+      path: profileForm.overridePath.trim(),
     });
   }
 
@@ -170,13 +176,19 @@
     if (!state.appSettings) return;
     await settingsStore.applySettings({
       retention_limit: retentionDraft,
-      auto_delete: autoDeleteDraft
+      auto_delete: autoDeleteDraft,
     });
   }
 </script>
 
 <section class="settings">
-  <AppHeader title="Settings" showBack onBack={goBack} onMenu={() => {}} />
+  <AppHeader
+    title="Settings"
+    showBack
+    onBack={goBack}
+    onMenu={() => {}}
+    sticky={false}
+  />
 
   <div class="accordion-stack">
     <details open class="accordion">
@@ -192,7 +204,9 @@
           <div class="profile-list">
             <div class="list-header">
               <p class="section-title">Loaded Profiles</p>
-              <button class="ghost" on:click={handleAddProfile}>Add Profile</button>
+              <button class="ghost" on:click={handleAddProfile}
+                >Add Profile</button
+              >
             </div>
             {#if state.loadingProfiles}
               <p class="muted">Loading profiles...</p>
@@ -221,15 +235,25 @@
           <div class="profile-form">
             <div class="form-header">
               <div>
-                <p class="section-title">{selectedProfile ? "Edit Profile" : "New Profile"}</p>
+                <p class="section-title">
+                  {selectedProfile ? "Edit Profile" : "New Profile"}
+                </p>
                 <p class="muted">Configure emulator metadata and save paths.</p>
               </div>
               <div class="actions">
                 <button class="ghost" on:click={handleCancel}>Cancel</button>
-                <button class="secondary" on:click={handleDeleteProfile} disabled={state.savingProfile || !profileForm.emulatorId}>
+                <button
+                  class="secondary"
+                  on:click={handleDeleteProfile}
+                  disabled={state.savingProfile || !profileForm.emulatorId}
+                >
                   Delete
                 </button>
-                <button class="primary" on:click={handleSaveProfile} disabled={state.savingProfile}>
+                <button
+                  class="primary"
+                  on:click={handleSaveProfile}
+                  disabled={state.savingProfile}
+                >
                   {state.savingProfile ? "Saving..." : "Save"}
                 </button>
               </div>
@@ -255,8 +279,14 @@
             </div>
             <div class="field-group">
               <label for="savePath">Save path</label>
-              <input id="savePath" placeholder="~/saves/retroarch" bind:value={profileForm.savePath} />
-              <p class="muted">Used as the default path unless override is enabled.</p>
+              <input
+                id="savePath"
+                placeholder="~/saves/retroarch"
+                bind:value={profileForm.savePath}
+              />
+              <p class="muted">
+                Used as the default path unless override is enabled.
+              </p>
             </div>
             <div class="field-group">
               <label for="patterns">Glob patterns</label>
@@ -313,7 +343,11 @@
           <span>Auto delete old versions</span>
         </label>
         <div class="actions">
-          <button class="primary" on:click={applyRetention} disabled={state.savingSettings}>
+          <button
+            class="primary"
+            on:click={applyRetention}
+            disabled={state.savingSettings}
+          >
             {state.savingSettings ? "Saving..." : "Save changes"}
           </button>
         </div>
@@ -335,10 +369,18 @@
         </div>
         <div class="stat">
           <p class="label">Current size</p>
-          <p class="value">{state.loadingStorage ? "Calculating..." : formatBytes(state.storageInfo?.size_bytes ?? 0)}</p>
+          <p class="value">
+            {state.loadingStorage
+              ? "Calculating..."
+              : formatBytes(state.storageInfo?.size_bytes ?? 0)}
+          </p>
         </div>
         <div class="actions">
-          <button class="secondary" on:click={openStorageFolder} disabled={!state.storageInfo}>
+          <button
+            class="secondary"
+            on:click={openStorageFolder}
+            disabled={!state.storageInfo}
+          >
             Open storage folder
           </button>
           <button class="primary" on:click={() => settingsStore.clearHistory()}>
@@ -366,6 +408,10 @@
 <style>
   .settings {
     padding: clamp(16px, 3vw, 32px);
+    padding-top: max(clamp(16px, 3vw, 32px), env(safe-area-inset-top));
+    padding-bottom: max(clamp(16px, 3vw, 32px), env(safe-area-inset-bottom));
+    padding-left: max(clamp(16px, 3vw, 32px), env(safe-area-inset-left));
+    padding-right: max(clamp(16px, 3vw, 32px), env(safe-area-inset-right));
     display: grid;
     grid-template-rows: auto 1fr;
     gap: 18px;
@@ -467,7 +513,8 @@
 
   .card.active {
     border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-    box-shadow: 0 8px 18px color-mix(in srgb, var(--accent-muted) 35%, transparent);
+    box-shadow: 0 8px 18px
+      color-mix(in srgb, var(--accent-muted) 35%, transparent);
   }
 
   .label {

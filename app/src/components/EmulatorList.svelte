@@ -51,7 +51,7 @@
     flex-direction: column;
     gap: clamp(6px, 1vw, 10px);
     overflow: visible;
-    padding: clamp(6px, 1.4vw, 12px) clamp(2px, 0.6vw, 6px) 6px 0;
+    padding: 20px 28px;
   }
 
   button {
@@ -65,11 +65,13 @@
     cursor: pointer;
     transition: transform 0.15s ease;
     color: var(--text);
+    width: 100%;
   }
 
   .blur-plate {
     position: absolute;
     inset: -12px -14px;
+    background: rgba(var(--surface-rgb), 0.8);
     background: color-mix(in srgb, var(--surface) 86%, transparent);
     border-radius: 16px;
     filter: blur(18px);
@@ -77,7 +79,9 @@
     opacity: 0.9;
     pointer-events: none;
     z-index: 0;
-    transition: opacity 0.2s ease, filter 0.2s ease;
+    transition:
+      opacity 0.2s ease,
+      filter 0.2s ease;
   }
 
   .button-surface {
@@ -88,8 +92,13 @@
     align-items: center;
     padding: clamp(10px, 2vw, 14px);
     border-radius: 14px;
-    border: 1px solid var(--border);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
+    border: 1px solid rgba(var(--border-rgb), 0.5);
+    background: rgba(var(--surface-rgb), 0.9);
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface) 92%, transparent),
+      var(--surface)
+    );
     box-shadow: var(--shadow-soft);
     overflow: visible;
     z-index: 1;
@@ -101,12 +110,20 @@
 
   button.selected .button-surface {
     border-color: var(--accent);
-    background: linear-gradient(120deg, color-mix(in srgb, var(--accent-muted) 80%, var(--surface) 20%), var(--surface));
-    box-shadow: 0 10px 20px color-mix(in srgb, var(--accent-strong) 28%, transparent);
+    background: rgba(var(--surface-rgb), 0.95);
+    background: linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--accent-muted) 80%, var(--surface) 20%),
+      var(--surface)
+    );
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 10px 20px
+      color-mix(in srgb, var(--accent-strong) 28%, transparent);
     transform: translateY(-1px);
   }
 
   button:hover .button-surface {
+    border-color: rgba(var(--accent-rgb), 0.8);
     border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
   }
 
@@ -150,6 +167,9 @@
     color: var(--muted);
     font-size: clamp(0.8rem, 0.3vw + 0.7rem, 0.95rem);
     display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .empty {

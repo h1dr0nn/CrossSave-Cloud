@@ -56,12 +56,12 @@ STATUS: IN PROGRESS
 - Recent history panel
 - Compare versions (hash/size/file count)
 
-2.3 Integrated Watcher UI (IN PROGRESS)
+2.3 Integrated Watcher UI (DONE)
 - Live file-change feed
 - Save-changed indicator
 - Auto-package toggle
 
-2.4 Settings UI
+2.4 Settings UI (DONE)
 - Add/edit emulator profiles
 - Override save paths
 - Backup retention settings
@@ -128,9 +128,9 @@ STATUS: PENDING
 ========================================
 CURRENT PROJECT POSITION
 ========================================
-PHASE: 1 — Local Core System
-SUBTASK: 1.5 Local Test UI in progress
-NEXT: Integrate watcher/packager/history into unified test UI
+PHASE: 3 — Cloud Sync System
+SUBTASK: 3.1 Cloud API
+NEXT: Design cloud API and authentication flow
 
 ========================================
 END

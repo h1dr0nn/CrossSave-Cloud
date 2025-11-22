@@ -35,26 +35,48 @@
     <span class="hint">Applies instantly</span>
   </div>
   <div class="segmented" role="group" aria-label="Theme selector">
-    <button class:active={$themePreference === "light"} aria-pressed={$themePreference === "light"} on:click={setLight}>
+    <button
+      class:active={$themePreference === "light"}
+      aria-pressed={$themePreference === "light"}
+      on:click={setLight}
+    >
       Light
     </button>
-    <button class:active={$themePreference === "dark"} aria-pressed={$themePreference === "dark"} on:click={setDark}>
+    <button
+      class:active={$themePreference === "dark"}
+      aria-pressed={$themePreference === "dark"}
+      on:click={setDark}
+    >
       Dark
     </button>
-    <button class:active={$themePreference === "system"} aria-pressed={$themePreference === "system"} on:click={useSystem}>
+    <button
+      class:active={$themePreference === "system"}
+      aria-pressed={$themePreference === "system"}
+      on:click={useSystem}
+    >
       System
     </button>
   </div>
   <div class="status">
     <span class="dot" aria-hidden="true"></span>
-    <p>Current theme: {$activeTheme}{hasManualPreference ? " (manual)" : " (system)"}</p>
+    <p>
+      Current theme: {$activeTheme}{hasManualPreference
+        ? " (manual)"
+        : " (system)"}
+    </p>
   </div>
 </section>
 
 <style>
   .panel {
+    border: 1px solid rgba(var(--border-rgb), 0.5);
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface));
+    background: rgba(var(--surface-rgb), 0.8);
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface) 94%, transparent),
+      var(--surface)
+    );
     border-radius: var(--radius);
     padding: 16px;
     box-shadow: var(--shadow-soft);
@@ -88,7 +110,9 @@
     white-space: nowrap;
     border-radius: 14px;
     padding: 4px;
+    background: rgba(var(--surface-muted-rgb), 0.6);
     background: color-mix(in srgb, var(--surface-muted) 85%, transparent);
+    border: 1px solid rgba(var(--border-rgb), 0.5);
     border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
     gap: 6px;
     overflow: hidden;
@@ -104,7 +128,10 @@
     color: var(--text);
     font-weight: 700;
     cursor: pointer;
-    transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+    transition:
+      background 0.2s ease,
+      box-shadow 0.2s ease,
+      transform 0.1s ease;
     flex: 1;
     min-width: 0;
     text-align: center;
@@ -112,9 +139,17 @@
 
   .segmented button.active,
   .segmented button[aria-pressed="true"] {
-    background: linear-gradient(135deg, color-mix(in srgb, var(--accent-muted) 80%, var(--surface)), var(--surface));
-    box-shadow: 0 10px 18px color-mix(in srgb, var(--accent-strong) 18%, transparent);
+    background: rgba(var(--surface-rgb), 0.95);
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent-muted) 80%, var(--surface)),
+      var(--surface)
+    );
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 10px 18px
+      color-mix(in srgb, var(--accent-strong) 18%, transparent);
     transform: translateY(-1px);
+    border: 1px solid rgba(var(--accent-rgb), 0.6);
     border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
   }
 
@@ -131,7 +166,9 @@
     border-radius: 50%;
     background: var(--accent);
     display: inline-block;
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-muted) 40%, transparent);
+    box-shadow: 0 0 0 4px rgba(var(--surface-rgb), 0.9);
+    box-shadow: 0 0 0 4px
+      color-mix(in srgb, var(--accent-muted) 40%, transparent);
   }
 
   @media (max-width: 640px) {

@@ -1,24 +1,18 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "crosssave-cloud",
   "version": "0.1.0",
-  "identifier": "com.h1dr0n.tauri-app",
+  "identifier": "com.h1dr0n.crosssave-cloud",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm build",
-    "frontendDist": "../build",
-    "ignore": [
-      "src-tauri/data/**",
-      "src-tauri/data/profiles/**",
-      "src-tauri/data/config/**",
-      "src-tauri/data/archives/**",
-      "src-tauri/data/history/**"
-    ]
+    "frontendDist": "../build"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "tauri-app",
         "width": 800,
         "height": 600

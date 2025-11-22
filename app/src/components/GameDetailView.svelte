@@ -10,7 +10,7 @@
     packageGame,
     subscribeFsEvents,
     type FsEventPayload,
-    type HistoryEntry
+    type HistoryEntry,
   } from "../lib/api";
   import { pushError, pushInfo } from "../lib/notifications";
   import { goto } from "$app/navigation";
@@ -36,7 +36,7 @@
   const timeFormatter = new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit"
+    second: "2-digit",
   });
 
   interface WatcherEvent {
@@ -51,7 +51,7 @@
     month: "short",
     day: "numeric",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
   });
 
   onMount(() => {
@@ -66,8 +66,11 @@
   });
 
   $: latestEntry = history[0] ?? null;
-  $: emulatorId = latestEntry?.metadata.emulator_id ?? emulatorId ?? deriveEmulatorId(gameId);
-  $: lastModified = latestEntry ? formatter.format(latestEntry.metadata.timestamp) : "—";
+  $: emulatorId =
+    latestEntry?.metadata.emulator_id ?? emulatorId ?? deriveEmulatorId(gameId);
+  $: lastModified = latestEntry
+    ? formatter.format(latestEntry.metadata.timestamp)
+    : "—";
   $: matchedFiles = latestEntry?.metadata.file_list.length ?? 0;
   $: latestHash = latestEntry ? shortHash(latestEntry.metadata.hash) : "—";
   $: if (emulatorId) {
@@ -160,22 +163,29 @@
   }
 
   $: if (typeof localStorage !== "undefined") {
-    localStorage.setItem(AUTO_PACKAGE_STORAGE_KEY(gameId), String(autoPackageEnabled));
+    localStorage.setItem(
+      AUTO_PACKAGE_STORAGE_KEY(gameId),
+      String(autoPackageEnabled)
+    );
   }
 
   function normalizeKind(kind: string) {
     if (!kind) return "unknown";
     const simplified = kind.toLowerCase();
     if (simplified.includes("create")) return "create";
-    if (simplified.includes("remove") || simplified.includes("delete")) return "delete";
-    if (simplified.includes("modify") || simplified.includes("write")) return "modify";
+    if (simplified.includes("remove") || simplified.includes("delete"))
+      return "delete";
+    if (simplified.includes("modify") || simplified.includes("write"))
+      return "modify";
     return simplified;
   }
 
   function pathMatches(path: string) {
     if (!trackedPatterns.length) return false;
     const normalizedPath = path.replaceAll("\\", "/");
-    return trackedPatterns.some((pattern) => globMatch(normalizedPath, pattern));
+    return trackedPatterns.some((pattern) =>
+      globMatch(normalizedPath, pattern)
+    );
   }
 
   function globMatch(path: string, pattern: string) {
@@ -189,16 +199,18 @@
 
   function appendWatcherEvent(payload: FsEventPayload) {
     const kind = normalizeKind(payload.kind);
-    const timestamp = payload.timestamp ? new Date(payload.timestamp) : new Date();
+    const timestamp = payload.timestamp
+      ? new Date(payload.timestamp)
+      : new Date();
     const fileName = payload.path.split(/[/\\]/).pop() || payload.path;
     watcherEvents = [
       {
         timestamp,
         kind,
         fileName,
-        path: payload.path
+        path: payload.path,
       },
-      ...watcherEvents
+      ...watcherEvents,
     ].slice(0, 50);
 
     if (pathMatches(payload.path)) {
@@ -211,7 +223,9 @@
 
   async function startWatcherFeed() {
     try {
-      unlisten = await subscribeFsEvents((payload) => appendWatcherEvent(payload));
+      unlisten = await subscribeFsEvents((payload) =>
+        appendWatcherEvent(payload)
+      );
     } catch (error) {
       console.error("Failed to subscribe to watcher events", error);
     }
@@ -311,7 +325,7 @@
       {history}
       on:select={handleSelect}
       on:reload={loadHistory}
-      loading={loading}
+      {loading}
     />
   </div>
 
@@ -321,16 +335,21 @@
         <p class="section-title">Watcher</p>
         <h2>Live save changes</h2>
         <p class="meta">
-          Monitoring file events for <span class="mono">{emulatorId || "?"}</span>
+          Monitoring file events for <span class="mono"
+            >{emulatorId || "?"}</span
+          >
           {#if trackedPatterns.length}
-            • {trackedPatterns.length} pattern{trackedPatterns.length === 1 ? "" : "s"}
+            • {trackedPatterns.length} pattern{trackedPatterns.length === 1
+              ? ""
+              : "s"}
           {/if}
         </p>
       </div>
 
       <div class="watcher-actions">
         {#if changesDetected}
-          <span class="pill attention" aria-live="polite">Changes detected</span>
+          <span class="pill attention" aria-live="polite">Changes detected</span
+          >
         {/if}
         <label class="toggle" aria-label="Auto-package on change">
           <input type="checkbox" bind:checked={autoPackageEnabled} />
@@ -360,7 +379,9 @@
               <div class="feed-meta">
                 <div class="row">
                   <span class="event-kind">{event.kind}</span>
-                  <span class="timestamp">{timeFormatter.format(event.timestamp)}</span>
+                  <span class="timestamp"
+                    >{timeFormatter.format(event.timestamp)}</span
+                  >
                 </div>
                 <p class="file-name" title={event.path}>{event.fileName}</p>
               </div>
@@ -387,6 +408,22 @@
     max-width: 1200px;
     margin: 0 auto;
     padding: clamp(var(--space-md), 4vw, 32px);
+    padding-top: max(
+      clamp(var(--space-md), 4vw, 32px),
+      env(safe-area-inset-top)
+    );
+    padding-bottom: max(
+      clamp(var(--space-md), 4vw, 32px),
+      env(safe-area-inset-bottom)
+    );
+    padding-left: max(
+      clamp(var(--space-md), 4vw, 32px),
+      env(safe-area-inset-left)
+    );
+    padding-right: max(
+      clamp(var(--space-md), 4vw, 32px),
+      env(safe-area-inset-right)
+    );
     display: flex;
     flex-direction: column;
     gap: var(--space-lg);
@@ -451,8 +488,16 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: radial-gradient(circle at 10% 20%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 35%),
-      radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--accent-strong) 10%, transparent), transparent 40%);
+    background: radial-gradient(
+        circle at 10% 20%,
+        color-mix(in srgb, var(--accent) 8%, transparent),
+        transparent 35%
+      ),
+      radial-gradient(
+        circle at 90% 0%,
+        color-mix(in srgb, var(--accent-strong) 10%, transparent),
+        transparent 40%
+      );
     pointer-events: none;
     opacity: 0.8;
   }
@@ -505,7 +550,10 @@
     box-shadow: var(--shadow);
     cursor: pointer;
     min-width: clamp(120px, 14vw, 150px);
-    transition: transform 0.12s ease, box-shadow 0.18s ease, opacity 0.16s ease,
+    transition:
+      transform 0.12s ease,
+      box-shadow 0.18s ease,
+      opacity 0.16s ease,
       border-color 0.18s ease;
   }
 
@@ -521,7 +569,10 @@
     color: var(--text);
     border: 1px solid var(--border);
     cursor: pointer;
-    transition: transform 0.12s ease, box-shadow 0.18s ease, opacity 0.16s ease,
+    transition:
+      transform 0.12s ease,
+      box-shadow 0.18s ease,
+      opacity 0.16s ease,
       border-color 0.18s ease;
   }
 
@@ -559,8 +610,8 @@
   }
 
   .mono {
-    font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      "Liberation Mono", "Courier New", monospace;
+    font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco,
+      Consolas, "Liberation Mono", "Courier New", monospace;
   }
 
   .panels {

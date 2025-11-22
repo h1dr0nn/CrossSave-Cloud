@@ -26,7 +26,11 @@
   <div class="overlay" on:click={close} aria-hidden="true"></div>
 {/if}
 
-<aside class:selected={!isMobile || open} class:drawer={isMobile} aria-label="Emulator list">
+<aside
+  class:selected={!isMobile || open}
+  class:drawer={isMobile}
+  aria-label="Emulator list"
+>
   <div class="sidebar-surface">
     <div class="sidebar-header">
       <div class="title">
@@ -40,20 +44,37 @@
         </svg>
         <div>
           <p>Emulators</p>
-          <small>{loading ? "Loading profiles" : `${emulators.length} available`}</small>
+          <small
+            >{loading
+              ? "Loading profiles"
+              : `${emulators.length} available`}</small
+          >
         </div>
       </div>
       {#if isMobile}
-        <button class="close" on:click={close} aria-label="Close emulator drawer">
+        <button
+          class="close"
+          on:click={close}
+          aria-label="Close emulator drawer"
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M6 6l12 12m0-12L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            <path
+              d="M6 6l12 12m0-12L6 18"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
           </svg>
         </button>
       {/if}
     </div>
 
     <div class="list-shell">
-      <EmulatorList emulators={emulators} selectedId={selectedId} on:select={(event) => select(event.detail)} />
+      <EmulatorList
+        {emulators}
+        {selectedId}
+        on:select={(event) => select(event.detail)}
+      />
     </div>
   </div>
 </aside>
@@ -69,6 +90,7 @@
     max-width: 320px;
     padding: 12px;
     background: transparent;
+    border-right: 1px solid rgba(var(--border-rgb), 0.5);
     border-right: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
     z-index: 6;
     overflow: hidden;
@@ -79,10 +101,13 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    padding: 14px;
-    background: color-mix(in srgb, var(--surface) 90%, transparent);
-    border-radius: 18px;
-    backdrop-filter: blur(20px) saturate(1.1);
+    padding-top: max(14px, env(safe-area-inset-top));
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: 14px;
+    background: var(--surface);
+    /* backdrop-filter: blur(20px) saturate(1.1); -- Disabled for performance on low-end devices */
+    border: 1px solid rgba(var(--border-rgb), 0.5);
     border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
     box-shadow: var(--shadow-soft);
     overflow: hidden;
@@ -100,7 +125,9 @@
     background: var(--surface);
     border-radius: 0 18px 18px 0;
     transform: translateX(-105%);
-    transition: transform 0.25s ease, opacity 0.25s ease;
+    transition:
+      transform 0.25s ease,
+      opacity 0.25s ease;
     z-index: 9999;
   }
 
@@ -116,6 +143,7 @@
   .overlay {
     position: fixed;
     inset: 0;
+    background: rgba(var(--overlay-rgb), 0.6);
     background: color-mix(in srgb, var(--overlay) 85%, transparent);
     z-index: 9998;
     backdrop-filter: blur(1px);
@@ -155,6 +183,7 @@
   }
 
   .close {
+    background: rgba(var(--surface-muted-rgb), 0.8);
     background: color-mix(in srgb, var(--surface-muted) 90%, transparent);
     border: 1px solid var(--border);
     border-radius: 12px;

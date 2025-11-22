@@ -7,7 +7,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 #[derive(Debug, Error)]
 pub enum ProfileError {
@@ -93,7 +93,10 @@ impl ProfileManager {
         Ok(guard.get(emulator_id).cloned())
     }
 
-    pub fn save_profile(&mut self, profile: EmulatorProfile) -> Result<EmulatorProfile, ProfileError> {
+    pub fn save_profile(
+        &mut self,
+        profile: EmulatorProfile,
+    ) -> Result<EmulatorProfile, ProfileError> {
         Self::validate_profile(&profile)?;
         self.persist_profile(&profile)?;
         self.reload()?;
@@ -163,9 +166,10 @@ impl ProfileManager {
                 ProfileError::ProfileFileRead(path.display().to_string(), err.to_string())
             })?;
 
-            let raw_profile: RawEmulatorProfile = serde_json::from_str(&content).map_err(|err| {
-                ProfileError::ProfileParse(path.display().to_string(), err.to_string())
-            })?;
+            let raw_profile: RawEmulatorProfile =
+                serde_json::from_str(&content).map_err(|err| {
+                    ProfileError::ProfileParse(path.display().to_string(), err.to_string())
+                })?;
 
             let normalized_paths = self.normalize_paths(&raw_profile.default_save_paths)?;
 
@@ -240,16 +244,11 @@ impl ProfileManager {
         }
 
         if profile.file_patterns.is_empty() {
-            return Err(ProfileError::InvalidProfile("file_patterns cannot be empty".into()));
+            return Err(ProfileError::InvalidProfile(
+                "file_patterns cannot be empty".into(),
+            ));
         }
 
         Ok(())
     }
-}
-
-pub fn default_profile_dirs() -> (PathBuf, PathBuf) {
-    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let default_dir = base.join("resources").join("profiles");
-    let user_dir = base.join("data").join("profiles");
-    (default_dir, user_dir)
 }
