@@ -3,5 +3,5 @@ export interface GameEntry {
   emulatorId: string;
   name: string;
   lastModified: string;
-  icon: "console" | "spark" | "disc";
+  icon: "default" | "console" | "spark" | "disc";
 }

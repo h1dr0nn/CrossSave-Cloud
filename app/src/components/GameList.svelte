@@ -3,6 +3,7 @@
   import { createEventDispatcher } from "svelte";
 
   import type { GameEntry } from "../lib/uiTypes";
+  import GameIcon from "./GameIcon.svelte";
 
   const dispatch = createEventDispatcher<{ reload: void }>();
 
@@ -67,51 +68,13 @@
     <div class="grid">
       {#each games as game}
         <button class="card" on:click={() => openGame(game.id)}>
-          <div class="icon" data-variant={game.icon}>
-            <svg
-              viewBox="0 0 48 48"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <defs>
-                <linearGradient
-                  id="grad-{game.id}"
-                  x1="0"
-                  y1="0"
-                  x2="48"
-                  y2="48"
-                >
-                  {#if game.icon === "console"}
-                    <stop offset="0%" stop-color="#a78bfa" />
-                    <stop offset="100%" stop-color="#818cf8" />
-                  {:else if game.icon === "spark"}
-                    <stop offset="0%" stop-color="#fbbf24" />
-                    <stop offset="100%" stop-color="#f97316" />
-                  {:else}
-                    <stop offset="0%" stop-color="#c084fc" />
-                    <stop offset="100%" stop-color="#f472b6" />
-                  {/if}
-                </linearGradient>
-              </defs>
-              <rect
-                width="48"
-                height="48"
-                rx="12"
-                fill="url(#grad-{game.id})"
-              />
-              <text
-                x="24"
-                y="24"
-                text-anchor="middle"
-                dominant-baseline="central"
-                fill="white"
-                font-size="20"
-                font-weight="700"
-                font-family="system-ui, -apple-system, sans-serif"
-              >
-                {game.name.charAt(0).toUpperCase()}
-              </text>
-            </svg>
+          <div class="icon-wrapper">
+            <GameIcon
+              name={game.name}
+              id={game.id}
+              variant={game.icon || "default"}
+              size={48}
+            />
           </div>
           <div class="meta">
             <strong>{game.name}</strong>
@@ -223,23 +186,10 @@
       color-mix(in srgb, var(--accent-strong) 22%, transparent);
   }
 
-  .icon {
-    width: 52px;
-    height: 52px;
-    border-radius: 16px;
-    display: grid;
-    place-items: center;
-    background: var(--card-contrast);
-    color: var(--text);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  }
-
-  .icon[data-variant="spark"] {
-    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-  }
-
-  .icon[data-variant="disc"] {
-    background: linear-gradient(135deg, #a855f7, #6366f1);
+  .icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .meta {

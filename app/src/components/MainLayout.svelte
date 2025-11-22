@@ -9,6 +9,7 @@
   import AppHeader from "./AppHeader.svelte";
   import ScanPopup from "./ScanPopup.svelte";
   import { listProfiles, scanSaveFiles } from "../lib/api";
+  import { extractGameName, getIconVariant } from "../lib/utils";
   import {
     profilesStore,
     gamesCacheStore,
@@ -110,11 +111,11 @@
     loadingGames = true;
     try {
       const files = await scanSaveFiles(emulatorId);
-      const games: GameEntry[] = files.map((file, index) => ({
+      const games: GameEntry[] = files.map((file) => ({
         id: file.path, // Use path as ID
         emulatorId: emulatorId,
-        name: file.name,
-        icon: index % 3 === 0 ? "spark" : index % 2 === 0 ? "disc" : "console", // Keep random icon for now
+        name: extractGameName(file.name),
+        icon: getIconVariant(file.path),
         lastModified: new Date(file.modified).toISOString(),
       }));
 
@@ -306,7 +307,7 @@
   }
 
   .header-wrapper {
-    margin-bottom: clamp(12px, 1.5vw, 18px);
+    margin-bottom: clamp(16px, 3vw, 32px);
   }
 
   .content-body::-webkit-scrollbar {
@@ -321,7 +322,7 @@
   .content-grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: clamp(16px, 3vw, 32px);
     align-items: start;
     min-height: 0;
   }

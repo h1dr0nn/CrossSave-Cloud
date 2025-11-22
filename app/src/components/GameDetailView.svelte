@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte";
 
   import AppHeader from "./AppHeader.svelte";
+  import GameIcon from "./GameIcon.svelte";
   import CompareVersionDrawer from "./CompareVersionDrawer.svelte";
   import RecentHistory from "./RecentHistory.svelte";
   import {
@@ -12,6 +13,7 @@
     type FsEventPayload,
     type HistoryEntry,
   } from "../lib/api";
+  import { extractGameName, getIconVariant } from "../lib/utils";
   import { pushError, pushInfo } from "../lib/notifications";
   import { goto } from "$app/navigation";
 
@@ -55,7 +57,6 @@
   });
 
   onMount(() => {
-    gameName = buildName(gameId);
     loadHistory();
     hydrateAutoPackage();
     startWatcherFeed();
@@ -77,14 +78,8 @@
     loadPatterns(emulatorId);
   }
 
-  function buildName(id: string) {
-    if (!id) return "Unknown Game";
-    const clean = id.replace(/[_-]+/g, " ").trim();
-    return clean
-      .split(" ")
-      .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
-      .join(" ");
-  }
+  $: gameName = extractGameName(gameId);
+  $: iconVariant = getIconVariant(gameId);
 
   function deriveEmulatorId(id: string) {
     const segments = id.split("-");
@@ -106,7 +101,8 @@
         history = [];
       }
       reloading = true;
-      const entries = await listHistory(gameId);
+      const minTime = new Promise((resolve) => setTimeout(resolve, 1000));
+      const [entries] = await Promise.all([listHistory(gameId), minTime]);
       history = [...entries].sort(
         (a, b) => b.metadata.timestamp - a.metadata.timestamp
       );
@@ -242,34 +238,42 @@
 </script>
 
 <section class="detail-shell">
-  <header class="detail-header">
-    <button class="icon-button" on:click={goBack} aria-label="Go back">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path
-          d="M14.5 6 8.5 12l6 6"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-        />
-      </svg>
-    </button>
-
-    <div class="header-actions">
+  <AppHeader showBack onBack={goBack} onMenu={() => {}} sticky={false}>
+    <div slot="actions" class="header-actions">
       {#if changesDetected}
         <span class="pill attention" aria-live="polite">Changes detected</span>
       {/if}
+      <button
+        class="icon-button"
+        class:spinning={reloading}
+        on:click={loadHistory}
+        disabled={reloading}
+        title="Reload history"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M23 4v6h-6" />
+          <path d="M1 20v-6h6" />
+          <path
+            d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
+          />
+        </svg>
+      </button>
       <button class="primary" on:click={packageNow} disabled={packaging}>
         {packaging ? "Packaging..." : "Package now"}
       </button>
-      <button class="ghost" on:click={loadHistory} disabled={reloading}>
-        {reloading ? "Refreshing" : "Reload"}
-      </button>
     </div>
-  </header>
+  </AppHeader>
 
   <div class="hero">
-    <div class="icon" aria-hidden="true">{gameName.charAt(0) || "G"}</div>
+    <GameIcon name={gameName} id={gameId} variant="spark" size={64} />
     <div class="heading">
       <p class="section-title">Save Management</p>
       <h1>{gameName}</h1>
@@ -407,40 +411,16 @@
     --space-lg: 24px;
     max-width: 1200px;
     margin: 0 auto;
-    padding: clamp(var(--space-md), 4vw, 32px);
-    padding-top: max(
-      clamp(var(--space-md), 4vw, 32px),
-      env(safe-area-inset-top)
-    );
-    padding-bottom: max(
-      clamp(var(--space-md), 4vw, 32px),
-      env(safe-area-inset-bottom)
-    );
-    padding-left: max(
-      clamp(var(--space-md), 4vw, 32px),
-      env(safe-area-inset-left)
-    );
-    padding-right: max(
-      clamp(var(--space-md), 4vw, 32px),
-      env(safe-area-inset-right)
-    );
+    padding: clamp(16px, 3vw, 32px);
+    padding-top: max(clamp(16px, 3vw, 32px), env(safe-area-inset-top));
+    padding-bottom: max(clamp(16px, 3vw, 32px), env(safe-area-inset-bottom));
+    padding-left: max(clamp(16px, 3vw, 32px), env(safe-area-inset-left));
+    padding-right: max(clamp(16px, 3vw, 32px), env(safe-area-inset-right));
     display: flex;
     flex-direction: column;
-    gap: var(--space-lg);
+    gap: clamp(16px, 3vw, 32px);
     min-height: 100vh;
     color: var(--text);
-  }
-
-  .detail-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-md);
-    padding: var(--space-md);
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--surface) 92%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
-    box-shadow: var(--shadow-soft);
-    min-width: 0;
   }
 
   .ghost:hover:not(:disabled),
@@ -467,6 +447,45 @@
   .header-actions button {
     white-space: nowrap;
     flex: 0 1 auto;
+  }
+
+  .icon-button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .icon-button:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--surface-muted);
+  }
+
+  .icon-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .icon-button svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .spinning svg {
+    animation: spin 1s linear infinite;
+    transform-origin: center;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .hero {

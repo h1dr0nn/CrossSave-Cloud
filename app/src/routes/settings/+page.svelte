@@ -414,7 +414,7 @@
     padding-right: max(clamp(16px, 3vw, 32px), env(safe-area-inset-right));
     display: grid;
     grid-template-rows: auto 1fr;
-    gap: 18px;
+    gap: clamp(16px, 3vw, 32px);
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;

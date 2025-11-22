@@ -58,9 +58,10 @@
     grid-template-columns: 1fr auto;
     align-items: center;
     gap: 12px;
+    min-height: 80px;
     padding: max(10px, env(safe-area-inset-top))
-      max(12px, env(safe-area-inset-right)) clamp(10px, 2vw, 14px)
-      max(12px, env(safe-area-inset-left));
+      max(20px, env(safe-area-inset-right)) clamp(10px, 2vw, 14px)
+      max(20px, env(safe-area-inset-left));
     border-radius: var(--radius);
     background: rgba(var(--surface-rgb), 0.8);
     background: color-mix(in srgb, var(--surface) 92%, transparent);
