@@ -171,7 +171,8 @@
     font-size: 1em;
     cursor: pointer;
     transition: background-color 0.2s ease;
-    width: 100%;
+    width: min(320px, 100%);
+    margin: 0 auto;
     text-align: center;
   }
 

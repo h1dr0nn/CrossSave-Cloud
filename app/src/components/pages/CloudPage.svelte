@@ -192,9 +192,11 @@
               <p class="error">{loginError}</p>
             {/if}
 
-            <button type="submit" class="btn-primary btn-large">
-              Sign In
-            </button>
+            <div class="form-actions">
+              <button type="submit" class="btn-primary btn-large">
+                Sign In
+              </button>
+            </div>
           </form>
 
           <p class="note">
@@ -417,9 +419,11 @@
   }
 
   .input-stack {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    overflow: hidden;
     background: color-mix(in srgb, var(--surface-muted) 70%, transparent);
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface) 40%, transparent);
   }
@@ -433,13 +437,10 @@
     border-radius: var(--radius-sm);
   }
 
-  .input-stack .form-group + .form-group {
-    border-top: 1px solid var(--border);
-  }
-
   .input-stack .form-group {
     border: 0;
-    border-radius: 0;
+    padding: 0;
+    background: transparent;
   }
 
   label {
@@ -447,6 +448,13 @@
     margin-bottom: 0.5rem;
     font-weight: 500;
     color: var(--text-primary);
+  }
+
+  .form-actions {
+    margin-top: 12px;
+    display: flex;
+    justify-content: center;
+    width: 100%;
   }
 
   input[type="email"],
@@ -482,9 +490,9 @@
   }
 
   .btn-large {
-    width: 100%;
-    padding: 1rem;
-    font-size: 1.05rem;
+    width: min(320px, 100%);
+    padding: 12px;
+    font-size: 1rem;
   }
 
   .btn-small {
@@ -493,18 +501,15 @@
   }
 
   .btn-primary {
-    background: linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--accent-color) 92%, transparent),
-      var(--accent-hover)
-    );
+    background: var(--accent);
     color: #fff;
-    border: 1px solid color-mix(in srgb, var(--accent-color) 35%, transparent);
-    box-shadow: 0 10px 22px color-mix(in srgb, var(--accent-color) 26%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 88%, transparent);
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 26%, transparent);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--accent-strong);
+    border-color: color-mix(in srgb, var(--accent-strong) 94%, transparent);
   }
 
   .btn-secondary {
@@ -679,6 +684,7 @@
   }
 
   .sync-actions .btn-large {
+    width: 100%;
     flex: 2;
   }
 
