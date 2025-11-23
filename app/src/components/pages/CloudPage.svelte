@@ -410,7 +410,7 @@
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius);
     padding: 24px;
     margin-bottom: 24px;
     box-shadow: var(--shadow-soft);
