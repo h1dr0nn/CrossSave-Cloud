@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { listProfiles, validatePaths, type EmulatorProfile } from "../lib/api";
-  import { pushError, pushInfo } from "../lib/notifications";
+  import { listProfiles, validatePaths, type EmulatorProfile } from "$lib/api";
+  import { pushError, pushInfo } from "$lib/notifications";
 
   interface ValidationState {
     status: "idle" | "pending" | "ok" | "error";
@@ -27,8 +27,8 @@
       [profile.emulator_id]: {
         status: "pending",
         message: "Validating...",
-        validPaths: []
-      }
+        validPaths: [],
+      },
     };
 
     try {
@@ -38,8 +38,8 @@
         [profile.emulator_id]: {
           status: "ok",
           message: `${validPaths.length} path(s) validated`,
-          validPaths
-        }
+          validPaths,
+        },
       };
       pushInfo(`Profile ${profile.emulator_id} validated`);
     } catch (error) {
@@ -48,8 +48,8 @@
         [profile.emulator_id]: {
           status: "error",
           message: String(error),
-          validPaths: []
-        }
+          validPaths: [],
+        },
       };
       pushError(`Validation failed for ${profile.emulator_id}: ${error}`);
     }
@@ -59,7 +59,10 @@
 </script>
 
 <section class="panel-content">
-  <p class="description">List of emulator profiles loaded from resources. Validate default paths locally.</p>
+  <p class="description">
+    List of emulator profiles loaded from resources. Validate default paths
+    locally.
+  </p>
 
   {#if profiles.length === 0}
     <p class="placeholder">No profiles loaded yet.</p>
@@ -131,10 +134,11 @@
   }
 
   .card {
-    border: 1px solid #e2e8f0;
+    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
     border-radius: 8px;
     padding: 12px;
-    background: #ffffff;
+    background: var(--surface);
+    box-shadow: var(--shadow-soft);
   }
 
   header {

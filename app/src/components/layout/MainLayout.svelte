@@ -348,4 +348,34 @@
       height: auto;
     }
   }
+
+  :global(.icon-button) {
+    background: color-mix(in srgb, var(--surface-muted) 80%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: clamp(6px, 1vw, 8px);
+    cursor: pointer;
+    color: var(--text);
+    box-shadow: var(--shadow-soft);
+    transition: all 0.2s;
+  }
+
+  :global(.icon-button:hover) {
+    background: color-mix(in srgb, var(--surface-muted) 95%, transparent);
+  }
+
+  :global(.icon-button.primary) {
+    background: var(--accent);
+    color: #0b1222;
+  }
+
+  :global(.icon-button.secondary) {
+    background: color-mix(in srgb, var(--accent) 20%, var(--surface-muted));
+  }
+
+  :global(.icon-button svg) {
+    width: clamp(18px, 4vw, 22px);
+    height: clamp(18px, 4vw, 22px);
+    display: block;
+  }
 </style>
