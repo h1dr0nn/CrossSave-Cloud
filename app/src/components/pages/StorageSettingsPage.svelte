@@ -172,7 +172,7 @@
     cursor: pointer;
     transition: background-color 0.2s ease;
     width: min(320px, 100%);
-    align-self: flex-start;
+    margin: 0 auto;
     text-align: center;
   }
 

@@ -229,7 +229,7 @@
     font-size: 1rem;
     cursor: pointer;
     transition: opacity 0.2s;
-    align-self: flex-start;
+    margin: 0 auto;
   }
 
   .save-button:hover:not(:disabled) {

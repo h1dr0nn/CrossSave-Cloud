@@ -452,11 +452,9 @@
 
   .form-actions {
     margin-top: 12px;
-  }
-
-  .login-card .form-actions {
     display: flex;
-    justify-content: flex-start;
+    justify-content: center;
+    width: 100%;
   }
 
   input[type="email"],
@@ -493,8 +491,8 @@
 
   .btn-large {
     width: min(320px, 100%);
-    padding: 1rem;
-    font-size: 1.05rem;
+    padding: 12px;
+    font-size: 1rem;
   }
 
   .btn-small {
