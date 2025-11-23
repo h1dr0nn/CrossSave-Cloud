@@ -2,11 +2,7 @@
   "emulator_id": "aethersx2",
   "name": "AetherSX2 (PS2)",
   "default_save_paths": [
-    "/storage/emulated/0/AetherSX2/memcards",
-    "/sdcard/AetherSX2/memcards",
-    "/storage/emulated/0/Android/data/xyz.aethersx2.android/files/memcards",
-    "/storage/sdcard1/AetherSX2/memcards",
-    "/mnt/media_rw/sdcard1/AetherSX2/memcards"
+    "/storage/emulated/0/AetherSX2/memcards"
   ],
   "file_patterns": ["*.ps2"]
 }

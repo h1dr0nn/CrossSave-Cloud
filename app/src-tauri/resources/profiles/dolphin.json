@@ -2,14 +2,7 @@
   "emulator_id": "dolphin",
   "name": "Dolphin (GC/Wii)",
   "default_save_paths": [
-    "/storage/emulated/0/dolphin-emu/GC",
-    "/sdcard/dolphin-emu/GC",
-    "/storage/sdcard1/dolphin-emu/GC",
-    "/mnt/media_rw/sdcard1/dolphin-emu/GC",
-    "/storage/emulated/0/dolphin-emu/Wii/title/00010000",
-    "/sdcard/dolphin-emu/Wii/title/00010000",
-    "/storage/sdcard1/dolphin-emu/Wii/title/00010000",
-    "/mnt/media_rw/sdcard1/dolphin-emu/Wii/title/00010000"
+    "/storage/emulated/0/dolphin-emu/GC"
   ],
   "file_patterns": ["*.gci", "*.sav", "*.bin"]
 }

@@ -2,9 +2,7 @@
   "emulator_id": "retroarch",
   "name": "RetroArch",
   "default_save_paths": [
-    "~/.config/retroarch/saves",
-    "~/Documents/RetroArch/saves",
-    "~/Library/Application Support/RetroArch/saves"
+    "/storage/emulated/0/retroarch/saves"
   ],
   "file_patterns": ["*.srm", "*.sav", "*.state"]
 }

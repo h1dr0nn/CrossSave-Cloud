@@ -2,10 +2,7 @@
   "emulator_id": "duckstation",
   "name": "DuckStation (PS1)",
   "default_save_paths": [
-    "/storage/emulated/0/duckstation/memcards",
-    "/sdcard/duckstation/memcards",
-    "/storage/sdcard1/duckstation/memcards",
-    "/mnt/media_rw/sdcard1/duckstation/memcards"
+    "/storage/emulated/0/duckstation/memcards"
   ],
   "file_patterns": ["*.mcd", "*.mcr"]
 }
