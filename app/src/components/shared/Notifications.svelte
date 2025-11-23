@@ -74,7 +74,7 @@
     position: fixed;
     bottom: 24px;
     right: 24px;
-    z-index: 10000;
+    z-index: 10001;
     display: flex;
     flex-direction: column-reverse;
     gap: 10px;
@@ -157,10 +157,16 @@
 
   @media (max-width: 600px) {
     .notifications-container {
-      bottom: 20px;
-      right: 20px;
-      left: 20px;
+      bottom: max(20px, env(safe-area-inset-bottom));
+      right: 16px;
+      left: 16px;
       width: auto;
+      max-width: none;
+    }
+
+    .toast {
+      font-size: 0.9rem;
+      padding: 10px 14px;
     }
   }
 </style>

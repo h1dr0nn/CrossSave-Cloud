@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import "$lib/themeStore";
+  import "$lib/legacy-fallbacks.css";
   import "../app.css";
 
   onMount(() => {

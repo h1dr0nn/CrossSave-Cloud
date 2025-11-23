@@ -1,0 +1,235 @@
+/**
+ * CSS Fallbacks for Older Devices (Android 7-9, WebView ~60-70)
+ * 
+ * Only applies when browser doesn't support modern features
+ */
+
+/* ===== CSS GRID FALLBACK ===== */
+@supports not (display: grid) {
+  .info-grid {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: horizontal;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: row;
+    flex-direction: row;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+    margin: -6px;
+  }
+
+  .info-grid > * {
+    -webkit-box-flex: 1;
+    -ms-flex: 1 1 calc(25% - 12px);
+    flex: 1 1 calc(25% - 12px);
+    min-width: calc(25% - 12px);
+    margin: 6px;
+  }
+
+  @media (max-width: 1100px) and (min-width: 601px) {
+    .info-grid > * {
+      -ms-flex: 1 1 calc(50% - 12px);
+      flex: 1 1 calc(50% - 12px);
+      min-width: calc(50% - 12px);
+      max-width: calc(50% - 12px);
+    }
+  }
+
+  @media (max-width: 600px) {
+    .info-grid > * {
+      -ms-flex: 1 1 100%;
+      flex: 1 1 100%;
+      min-width: 100%;
+      max-width: 100%;
+    }
+  }
+
+  .content-grid,
+  .panels,
+  [class*="-grid"]:not(.info-grid) {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+  }
+
+  .shell,
+  .layout {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: horizontal;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: row;
+    flex-direction: row;
+  }
+
+  @media (max-width: 900px) {
+    .shell,
+    .layout {
+      -webkit-box-orient: vertical;
+      -webkit-box-direction: normal;
+      -ms-flex-direction: column;
+      flex-direction: column;
+    }
+  }
+}
+
+/* ===== BACKDROP-FILTER FALLBACK ===== */
+@supports not (backdrop-filter: blur(1px)) {
+  .hero {
+    background: rgba(20, 25, 35, 0.98);
+  }
+
+  .info-card,
+  .card,
+  article[class*="card"] {
+    background: rgba(30, 35, 50, 0.95);
+  }
+
+  aside,
+  .sidebar,
+  .drawer {
+    background: rgb(20, 25, 35);
+  }
+
+  .overlay,
+  [class*="overlay"],
+  [class*="modal"],
+  [class*="popup"] {
+    background: rgba(0, 0, 0, 0.85);
+  }
+}
+
+/* ===== COLOR-MIX() FALLBACK ===== */
+@supports not (background: color-mix(in srgb, red, blue)) {
+  .info-card,
+  .panel,
+  .card {
+    background: rgba(30, 35, 50, 0.92);
+    border-color: rgba(100, 110, 130, 0.5);
+  }
+
+  .pill,
+  .badge {
+    background: rgba(60, 70, 90, 0.8);
+    border-color: rgba(100, 110, 130, 0.4);
+  }
+
+  button.primary {
+    background: #4f46e5;
+    border-color: #6366f1;
+  }
+
+  button.secondary {
+    background: rgba(80, 90, 120, 0.5);
+    border-color: rgba(120, 130, 160, 0.6);
+  }
+}
+
+/* ===== CLAMP() FALLBACK ===== */
+@supports not (font-size: clamp(1rem, 2vw, 2rem)) {
+  h1 {
+    font-size: 1.8rem;
+  }
+
+  h2 {
+    font-size: 1.4rem;
+  }
+
+  h3 {
+    font-size: 1.2rem;
+  }
+
+  .content-body,
+  main,
+  section {
+    padding: 16px;
+  }
+
+  .sidebar {
+    width: 360px;
+  }
+
+  @media (max-width: 900px) {
+    .sidebar {
+      width: 85vw;
+      max-width: 380px;
+    }
+  }
+
+  button {
+    min-width: 120px;
+    padding: 10px 14px;
+  }
+}
+
+/* ===== MIN/MAX FALLBACK ===== */
+@supports not (width: min(100%, 500px)) {
+  .content-body,
+  main {
+    padding: 16px;
+  }
+}
+
+/* ===== GRADIENT FALLBACK ===== */
+@supports not (background: linear-gradient(135deg, red, blue)) {
+  .icon,
+  [class*="icon"].gradient {
+    background: #4f46e5;
+  }
+
+  .hero::after {
+    background: rgba(79, 70, 229, 0.08);
+  }
+}
+
+/* ===== PERFORMANCE FOR OLD DEVICES ===== */
+@media (max-width: 900px) {
+  /* Simplify shadows on mobile */
+  .card,
+  .panel,
+  .info-card,
+  button {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Disable expensive animations on old devices */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ===== BASIC COMPATIBILITY ===== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body,
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+.content-body,
+main {
+  -webkit-overflow-scrolling: touch;
+}
