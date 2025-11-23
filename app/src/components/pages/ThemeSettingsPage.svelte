@@ -46,11 +46,6 @@
     border-radius: var(--radius);
     overflow: hidden;
     box-shadow: var(--shadow-soft);
-    padding: 24px;
-    margin-bottom: 24px;
-    max-width: 600px;
-    margin-left: auto;
-    margin-right: auto;
   }
 
   .content-surface {

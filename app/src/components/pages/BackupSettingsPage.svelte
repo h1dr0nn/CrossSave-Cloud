@@ -170,7 +170,8 @@
     outline: none;
     appearance: none;
     -webkit-appearance: none;
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 50%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--border) 50%, transparent);
   }
 
   input[type="range"]::-webkit-slider-thumb {
@@ -188,7 +189,8 @@
     height: 6px;
     border-radius: 3px;
     background: color-mix(in srgb, var(--border) 70%, var(--surface-muted) 30%);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 50%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--border) 50%, transparent);
   }
 
   input[type="range"]::-moz-range-thumb {
@@ -219,7 +221,7 @@
   }
 
   .save-button {
-    width: min(320px, 100%);
+    width: min(100%);
     padding: 12px;
     border: none;
     border-radius: 8px;

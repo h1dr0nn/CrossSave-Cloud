@@ -490,7 +490,7 @@
   }
 
   .btn-large {
-    width: min(320px, 100%);
+    width: min(100%);
     padding: 12px;
     font-size: 1rem;
   }
