@@ -16,8 +16,12 @@ target
 /app/build
 /app/.svelte-kit
 /app/package
+/app/.pnpm-store
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Build outputs
+/app/builds
 
 # Tauri
 /app/src-tauri/gen/schemas
