@@ -73,7 +73,7 @@ function createSettingsStore() {
   });
 
   async function loadProfiles() {
-    update((state) => ({ ...state, loadingProfiles: true }));
+    update((state) => ({ ...state, loadingProfiles: state.profiles.length === 0 }));
     try {
       const profiles = await listProfiles();
       update((state) => ({

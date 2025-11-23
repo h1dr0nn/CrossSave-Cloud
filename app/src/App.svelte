@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  import MainLayout from "./components/MainLayout.svelte";
+  import MainLayout from "./components/layout/MainLayout.svelte";
 
   let hasError = false;
 

@@ -3,8 +3,9 @@
   import { onMount } from "svelte";
   import { openPath } from "@tauri-apps/plugin-opener";
 
-  import AppHeader from "../../components/AppHeader.svelte";
-  import ThemeSelector from "../../components/ThemeSelector.svelte";
+  import AppHeader from "../../components/layout/AppHeader.svelte";
+  import ThemeSelector from "../../components/layout/ThemeSelector.svelte";
+  import Notifications from "../../components/shared/Notifications.svelte";
   import type { EmulatorProfile } from "$lib/api";
   import { settingsStore, type OverrideState } from "$lib/settingsStore";
   import { pushError } from "$lib/notifications";
@@ -180,6 +181,8 @@
     });
   }
 </script>
+
+<Notifications />
 
 <section class="settings">
   <AppHeader

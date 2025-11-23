@@ -121,44 +121,52 @@ fn default_profile_dirs_for_app(app: &tauri::App) -> (PathBuf, PathBuf) {
     {
         let profiles_dir = app_data_dir.join("profiles");
 
-        // Create default RetroArch profile on first run
-        if let Err(e) = std::fs::create_dir_all(&profiles_dir) {
-            tracing::error!("[PROFILE] Failed to create profiles dir: {e}");
-        } else {
-            let retroarch_profile = profiles_dir.join("retroarch.json");
-            if !retroarch_profile.exists() {
-                let default_profile = include_str!("../resources/profiles/retroarch.json");
-                let _ = std::fs::write(&retroarch_profile, default_profile);
-            }
+        let setup_marker = profiles_dir.join(".setup_complete");
 
-            let drastic_profile = profiles_dir.join("drastic.json");
-            if !drastic_profile.exists() {
-                let default_profile = include_str!("../resources/profiles/drastic.json");
-                let _ = std::fs::write(&drastic_profile, default_profile);
-            }
+        // Only create default profiles if setup hasn't completed yet
+        if !setup_marker.exists() {
+            // Create default RetroArch profile on first run
+            if let Err(e) = std::fs::create_dir_all(&profiles_dir) {
+                tracing::error!("[PROFILE] Failed to create profiles dir: {e}");
+            } else {
+                let retroarch_profile = profiles_dir.join("retroarch.json");
+                if !retroarch_profile.exists() {
+                    let default_profile = include_str!("../resources/profiles/retroarch.json");
+                    let _ = std::fs::write(&retroarch_profile, default_profile);
+                }
 
-            let ppsspp_profile = profiles_dir.join("ppsspp.json");
-            if !ppsspp_profile.exists() {
-                let default_profile = include_str!("../resources/profiles/ppsspp.json");
-                let _ = std::fs::write(&ppsspp_profile, default_profile);
-            }
+                let drastic_profile = profiles_dir.join("drastic.json");
+                if !drastic_profile.exists() {
+                    let default_profile = include_str!("../resources/profiles/drastic.json");
+                    let _ = std::fs::write(&drastic_profile, default_profile);
+                }
 
-            let duckstation_profile = profiles_dir.join("duckstation.json");
-            if !duckstation_profile.exists() {
-                let default_profile = include_str!("../resources/profiles/duckstation.json");
-                let _ = std::fs::write(&duckstation_profile, default_profile);
-            }
+                let ppsspp_profile = profiles_dir.join("ppsspp.json");
+                if !ppsspp_profile.exists() {
+                    let default_profile = include_str!("../resources/profiles/ppsspp.json");
+                    let _ = std::fs::write(&ppsspp_profile, default_profile);
+                }
 
-            let aethersx2_profile = profiles_dir.join("aethersx2.json");
-            if !aethersx2_profile.exists() {
-                let default_profile = include_str!("../resources/profiles/aethersx2.json");
-                let _ = std::fs::write(&aethersx2_profile, default_profile);
-            }
+                let duckstation_profile = profiles_dir.join("duckstation.json");
+                if !duckstation_profile.exists() {
+                    let default_profile = include_str!("../resources/profiles/duckstation.json");
+                    let _ = std::fs::write(&duckstation_profile, default_profile);
+                }
 
-            let dolphin_profile = profiles_dir.join("dolphin.json");
-            if !dolphin_profile.exists() {
-                let default_profile = include_str!("../resources/profiles/dolphin.json");
-                let _ = std::fs::write(&dolphin_profile, default_profile);
+                let aethersx2_profile = profiles_dir.join("aethersx2.json");
+                if !aethersx2_profile.exists() {
+                    let default_profile = include_str!("../resources/profiles/aethersx2.json");
+                    let _ = std::fs::write(&aethersx2_profile, default_profile);
+                }
+
+                let dolphin_profile = profiles_dir.join("dolphin.json");
+                if !dolphin_profile.exists() {
+                    let default_profile = include_str!("../resources/profiles/dolphin.json");
+                    let _ = std::fs::write(&dolphin_profile, default_profile);
+                }
+
+                // Mark setup as complete
+                let _ = std::fs::write(&setup_marker, "setup complete");
             }
         }
 
@@ -167,8 +175,12 @@ fn default_profile_dirs_for_app(app: &tauri::App) -> (PathBuf, PathBuf) {
 
     #[cfg(not(target_os = "android"))]
     {
-        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let default_dir = base.join("resources").join("profiles");
+        let default_dir = app
+            .path()
+            .resource_dir()
+            .expect("failed to get resource dir")
+            .join("resources")
+            .join("profiles");
         let user_dir = app_data_dir.join("profiles");
         (default_dir, user_dir)
     }

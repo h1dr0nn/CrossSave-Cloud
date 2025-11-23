@@ -128,6 +128,7 @@ pub async fn check_path_status(
 
 #[tauri::command]
 pub async fn open_folder(path: String) -> Result<(), String> {
+    #[cfg(not(target_os = "android"))]
     use std::process::Command;
     
     let path_buf = PathBuf::from(&path);
@@ -168,7 +169,10 @@ pub async fn open_folder(path: String) -> Result<(), String> {
         // For now, return an error suggesting the user to use a file manager app
         return Err("Please use your device's file manager app to browse this folder".to_string());
     }
-    
+
+    #[cfg(not(target_os = "android"))]
     info!("[EXPLORER] Opened folder: {}", path);
+    
+    #[cfg(not(target_os = "android"))]
     Ok(())
 }

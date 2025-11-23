@@ -22,3 +22,9 @@ export function extractGameName(path: string): string {
     .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
     .join(" ");
 }
+
+export function deriveEmulatorId(gameId: string): string {
+    // Best effort guess or return empty if unknown
+    // In the future, we could map paths to emulators if we have that info available globally
+    return "";
+}

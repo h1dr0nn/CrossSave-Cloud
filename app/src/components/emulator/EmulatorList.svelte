@@ -1,0 +1,179 @@
+<script lang="ts">
+  import { createEventDispatcher } from "svelte";
+  import { getEmulatorIcon } from "../../lib/emulatorIcons";
+  import type { EmulatorProfile } from "../../lib/api";
+
+  export let emulators: EmulatorProfile[] = [];
+  export let selectedId: string | null = null;
+
+  const dispatch = createEventDispatcher<{ select: string }>();
+
+  function selectEmulator(id: string) {
+    dispatch("select", id);
+  }
+</script>
+
+<div class="list" role="listbox" aria-label="Emulator profiles">
+  {#if emulators.length === 0}
+    <p class="empty">No emulator profiles found.</p>
+  {:else}
+    {#each emulators as emulator}
+      <button
+        class:selected={emulator.emulator_id === selectedId}
+        on:click={() => selectEmulator(emulator.emulator_id)}
+        role="option"
+        aria-selected={emulator.emulator_id === selectedId}
+      >
+        <span class="blur-plate" aria-hidden="true"></span>
+        <div class="button-surface">
+          <div class="icon">
+            {@html getEmulatorIcon(emulator.emulator_id)}
+          </div>
+          <div class="text">
+            <span>{emulator.name}</span>
+            <small>{emulator.default_save_paths[0] ?? "No save path"}</small>
+          </div>
+        </div>
+      </button>
+    {/each}
+  {/if}
+</div>
+
+<style>
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(6px, 1vw, 10px);
+    overflow: visible;
+    padding: 20px 28px;
+  }
+
+  button {
+    position: relative;
+    border: none;
+    background: transparent;
+    border-radius: 14px;
+    padding: 0;
+    display: block;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    color: var(--text);
+    width: 100%;
+  }
+
+  .blur-plate {
+    position: absolute;
+    inset: -12px -14px;
+    background: rgba(var(--surface-rgb), 0.8);
+    background: color-mix(in srgb, var(--surface) 86%, transparent);
+    border-radius: 16px;
+    filter: blur(18px);
+    backdrop-filter: blur(20px);
+    opacity: 0.9;
+    pointer-events: none;
+    z-index: 0;
+    transition:
+      opacity 0.2s ease,
+      filter 0.2s ease;
+  }
+
+  .button-surface {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: clamp(10px, 1.5vw, 14px);
+    align-items: center;
+    padding: clamp(10px, 2vw, 14px);
+    border-radius: 14px;
+    border: 1px solid rgba(var(--border-rgb), 0.5);
+    background: rgba(var(--surface-rgb), 0.9);
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface) 92%, transparent),
+      var(--surface)
+    );
+    box-shadow: var(--shadow-soft);
+    overflow: visible;
+    z-index: 1;
+  }
+
+  button.selected {
+    transform: none;
+  }
+
+  button.selected .button-surface {
+    border-color: var(--accent);
+    background: rgba(var(--surface-rgb), 0.95);
+    background: linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--accent-muted) 80%, var(--surface) 20%),
+      var(--surface)
+    );
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 10px 20px
+      color-mix(in srgb, var(--accent-strong) 28%, transparent);
+    transform: translateY(-1px);
+  }
+
+  button:hover .button-surface {
+    border-color: rgba(var(--accent-rgb), 0.8);
+    border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  }
+
+  button:hover .blur-plate {
+    opacity: 1;
+    filter: blur(16px);
+  }
+
+  .icon {
+    width: clamp(36px, 5vw, 44px);
+    height: clamp(36px, 5vw, 44px);
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    color: var(--text);
+    background: var(--surface-muted);
+    overflow: hidden;
+  }
+
+  .icon :global(svg) {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .text {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(4px, 0.8vw, 8px);
+    min-width: 0;
+  }
+
+  .text span {
+    font-weight: 700;
+    font-size: clamp(1rem, 0.5vw + 0.9rem, 1.05rem);
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .text small {
+    color: var(--muted);
+    font-size: clamp(0.8rem, 0.3vw + 0.7rem, 0.95rem);
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .empty {
+    margin: 0;
+    padding: clamp(12px, 2vw, 16px);
+    border-radius: 12px;
+    background: var(--surface-muted);
+    border: 1px dashed var(--border);
+    color: var(--muted);
+  }
+</style>
