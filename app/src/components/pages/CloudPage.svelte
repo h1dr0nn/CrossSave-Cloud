@@ -493,18 +493,15 @@
   }
 
   .btn-primary {
-    background: linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--accent-color) 92%, transparent),
-      var(--accent-hover)
-    );
+    background: var(--accent);
     color: #fff;
-    border: 1px solid color-mix(in srgb, var(--accent-color) 35%, transparent);
-    box-shadow: 0 10px 22px color-mix(in srgb, var(--accent-color) 26%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 88%, transparent);
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 26%, transparent);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--accent-strong);
+    border-color: color-mix(in srgb, var(--accent-strong) 94%, transparent);
   }
 
   .btn-secondary {
