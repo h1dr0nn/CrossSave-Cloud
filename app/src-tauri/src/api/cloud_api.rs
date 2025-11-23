@@ -16,13 +16,20 @@ pub struct CloudStatus {
     pub connected: bool,
 }
 
+/// Uploads a specific local save version to the cloud.
+///
+/// This function:
+/// 1. Retrieves the local history entry for the given version.
+/// 2. Converts the archive path to a `PathBuf`.
+/// 3. Spawns an async task to upload the archive using the configured backend.
+/// 4. Returns a summary of the uploaded version.
 #[tauri::command]
 pub async fn upload_cloud_save(
     game_id: String,
     _emulator_id: String,
     local_version_id: String,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
-    history: State<'_, HistoryManager>,
+    history: State<'_, Arc<HistoryManager>>,
 ) -> Result<CloudVersionSummary, String> {
     let history_entry = history
         .get_history_item(game_id, local_version_id)
@@ -35,6 +42,9 @@ pub async fn upload_cloud_save(
     backend.upload_archive(metadata, archive_path_buf).await.map_err(cloud_error_to_string)
 }
 
+/// Lists available save versions for a game from the cloud.
+///
+/// Returns a list of `CloudVersionSummary` objects, optionally limited by `limit`.
 #[tauri::command]
 pub async fn list_cloud_versions(
     game_id: String,
@@ -45,6 +55,10 @@ pub async fn list_cloud_versions(
     backend.list_versions(game_id, limit.map(|l| l as usize)).await.map_err(cloud_error_to_string)
 }
 
+/// Downloads a specific version from the cloud to the local downloads directory.
+///
+/// The file is saved to `AppData/data/cloud_downloads/{game_id}_{version_id}.zip`.
+/// Returns the absolute path to the downloaded file.
 #[tauri::command]
 pub async fn download_cloud_version(
     game_id: String,
@@ -62,29 +76,39 @@ pub async fn download_cloud_version(
     Ok(target_path.to_string_lossy().to_string())
 }
 
+/// Retrieves the current cloud configuration settings.
 #[tauri::command]
 pub async fn get_cloud_config(
-    settings: State<'_, SettingsManager>,
+    settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<CloudSettings, String> {
     settings.get_settings()
         .map(|s| s.cloud)
         .map_err(|e| format!("Failed to load settings: {e}"))
 }
 
+/// Updates the cloud configuration settings.
+///
+/// Persists the new settings to the application's settings file.
 #[tauri::command]
 pub async fn update_cloud_config(
     new_config: CloudSettings,
-    settings: State<'_, SettingsManager>,
+    settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<CloudSettings, String> {
     let mut app_settings = settings.get_settings().map_err(|e| format!("Failed to load settings: {e}"))?;
     app_settings.cloud = new_config;
     settings.update_settings(app_settings).map(|s| s.cloud).map_err(|e| format!("Failed to save settings: {e}"))
 }
 
+/// Checks the status of the cloud connection.
+///
+/// Returns a `CloudStatus` object containing:
+/// - `enabled`: Whether cloud sync is enabled in settings.
+/// - `device_id`: The unique ID of this device.
+/// - `connected`: Connection status (always true for mock backend).
 #[tauri::command]
 pub async fn get_cloud_status(
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
-    settings: State<'_, SettingsManager>,
+    settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<CloudStatus, String> {
     let app_settings = settings.get_settings().map_err(|e| format!("Failed to load settings: {e}"))?;
     let backend = cloud.lock().await;

@@ -117,6 +117,24 @@ docker run --rm \
     cd ..
     
     echo ''
+    echo '📚 Bundling shared libraries...'
+    mkdir -p builds/linux/libs
+    
+    # List of required libraries (GTK3, GDK3, WebKit2GTK, and dependencies)
+    LIBS="libgdk-3.so.0 libgtk-3.so.0 libwebkit2gtk-4.0.so.37 libjavascriptcoregtk-4.0.so.18 libsoup-2.4.so.1 libgio-2.0.so.0 libgobject-2.0.so.0 libglib-2.0.so.0 libpango-1.0.so.0 libcairo.so.2 libgdk_pixbuf-2.0.so.0 libatk-1.0.so.0"
+    
+    for lib in $LIBS; do
+        # Find library path
+        path=$(find /usr/lib/aarch64-linux-gnu -name "$lib" | head -n 1)
+        if [ -n "$path" ]; then
+            echo "  Copying $lib..."
+            cp -L "$path" builds/linux/libs/
+        else
+            echo "  ⚠️ Warning: $lib not found"
+        fi
+    done
+    
+    echo ''
     echo '✅ aarch64 build complete!'
   "
 

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use serde::Serialize;
 use tracing::info;
 
@@ -17,15 +18,15 @@ fn map_settings_error(err: SettingsError) -> String {
 
 #[tauri::command]
 pub async fn get_app_settings(
-    state: tauri::State<'_, SettingsManager>,
+    state: tauri::State<'_, Arc<SettingsManager>>,
 ) -> Result<AppSettings, String> {
     state.get_settings().map_err(map_settings_error)
 }
 
 #[tauri::command]
 pub async fn update_app_settings(
-    state: tauri::State<'_, SettingsManager>,
-    history: tauri::State<'_, HistoryManager>,
+    state: tauri::State<'_, Arc<SettingsManager>>,
+    history: tauri::State<'_, Arc<HistoryManager>>,
     settings: AppSettings,
 ) -> Result<AppSettings, String> {
     let updated = state.update_settings(settings).map_err(map_settings_error)?;
@@ -38,7 +39,7 @@ pub async fn update_app_settings(
 
 #[tauri::command]
 pub async fn get_storage_info(
-    history: tauri::State<'_, HistoryManager>,
+    history: tauri::State<'_, Arc<HistoryManager>>,
 ) -> Result<StorageInfo, String> {
     let size_bytes = history.total_size().map_err(|err| err.to_string())?;
     let bounds = default_retention_bounds();
@@ -50,7 +51,7 @@ pub async fn get_storage_info(
 }
 
 #[tauri::command]
-pub async fn clear_history_cache(history: tauri::State<'_, HistoryManager>) -> Result<(), String> {
+pub async fn clear_history_cache(history: tauri::State<'_, Arc<HistoryManager>>) -> Result<(), String> {
     history.clear_all().map_err(|err| err.to_string())?;
     info!("[HISTORY] Cleared history cache by request");
     Ok(())

@@ -12,11 +12,13 @@ use api::profile_api::{delete_profile, get_profile, list_profiles, save_profile}
 use api::settings_api::{
     clear_history_cache, get_app_settings, get_storage_info, update_app_settings,
 };
+use api::sync_api::{clear_sync_queue, force_sync_now, get_sync_status};
 use api::watcher_api::{start_watcher, stop_watcher};
 use core::cloud::{CloudBackend, MockCloudBackend};
 use core::history::HistoryManager;
 use core::profile::ProfileManager;
 use core::settings::SettingsManager;
+use core::sync::SyncManager;
 use core::watcher::WatcherManager;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -98,11 +100,27 @@ pub fn run() {
             tracing::info!("[CLOUD] Mock cloud backend initialized");
 
             // Register state
+            let history_arc = Arc::new(history_manager);
+            let settings_arc = Arc::new(settings_manager);
+            let cloud_arc = Arc::new(Mutex::new(cloud));
+
             app.manage(WatcherManager::default());
-            app.manage(history_manager);
+            app.manage(history_arc.clone());
             app.manage(Arc::new(RwLock::new(profile_manager)));
-            app.manage(settings_manager);
-            app.manage(Arc::new(Mutex::new(cloud)));
+            app.manage(settings_arc.clone());
+            app.manage(cloud_arc.clone());
+
+            // Initialize SyncManager
+            let sync_manager =
+                SyncManager::new(app.handle().clone(), cloud_arc, history_arc, settings_arc);
+
+            app.manage(sync_manager.clone());
+
+            // Start background tasks after all state is managed
+            // Use tauri::async_runtime to spawn in Tauri's runtime context
+            tauri::async_runtime::spawn(async move {
+                sync_manager.start_background_task();
+            });
 
             Ok(())
         })
@@ -133,6 +151,9 @@ pub fn run() {
             get_cloud_config,
             update_cloud_config,
             get_cloud_status,
+            get_sync_status,
+            force_sync_now,
+            clear_sync_queue,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
