@@ -1,3 +1,4 @@
+pub mod cloud;
 pub mod history;
 pub mod packager;
 pub mod profile;

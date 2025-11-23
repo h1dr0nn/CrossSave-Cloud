@@ -11,6 +11,8 @@ const MAX_RETENTION: usize = 20;
 pub struct AppSettings {
     pub retention_limit: usize,
     pub auto_delete: bool,
+    #[serde(default)]
+    pub cloud: CloudSettings,
 }
 
 impl Default for AppSettings {
@@ -18,6 +20,28 @@ impl Default for AppSettings {
         Self {
             retention_limit: 10,
             auto_delete: true,
+            cloud: CloudSettings::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CloudSettings {
+    pub enabled: bool,
+    pub base_url: String,
+    pub api_key: String,
+    pub device_id: String,
+    pub timeout_seconds: u64,
+}
+
+impl Default for CloudSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            base_url: "https://api.crosssave.local".to_string(),
+            api_key: String::new(),
+            device_id: String::new(),
+            timeout_seconds: 30,
         }
     }
 }

@@ -569,6 +569,7 @@ name = "crosssave-cloud"
 version = "0.0.1"
 dependencies = [
  "async-channel",
+ "async-trait",
  "glob",
  "notify",
  "serde",
@@ -580,6 +581,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "uuid",
  "zip",
 ]
 
