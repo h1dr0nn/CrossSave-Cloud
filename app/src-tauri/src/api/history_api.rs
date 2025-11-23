@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tracing::{error, warn};
 
 use crate::core::history::{HistoryEntry, HistoryManager};
@@ -14,7 +15,7 @@ fn sanitize_input(value: String, field: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn list_history(
-    state: tauri::State<'_, HistoryManager>,
+    state: tauri::State<'_, Arc<HistoryManager>>,
     game_id: String,
 ) -> Result<Vec<HistoryEntry>, String> {
     let sanitized_game_id = sanitize_input(game_id, "game_id")?;
@@ -27,7 +28,7 @@ pub async fn list_history(
 
 #[tauri::command]
 pub async fn get_history_item(
-    state: tauri::State<'_, HistoryManager>,
+    state: tauri::State<'_, Arc<HistoryManager>>,
     game_id: String,
     version_id: String,
 ) -> Result<HistoryEntry, String> {
@@ -44,7 +45,7 @@ pub async fn get_history_item(
 
 #[tauri::command]
 pub async fn rollback_version(
-    state: tauri::State<'_, HistoryManager>,
+    state: tauri::State<'_, Arc<HistoryManager>>,
     game_id: String,
     version_id: String,
 ) -> Result<PackagedSave, String> {
@@ -61,7 +62,7 @@ pub async fn rollback_version(
 
 #[tauri::command]
 pub async fn delete_history_item(
-    state: tauri::State<'_, HistoryManager>,
+    state: tauri::State<'_, Arc<HistoryManager>>,
     game_id: String,
     version_id: String,
 ) -> Result<(), String> {

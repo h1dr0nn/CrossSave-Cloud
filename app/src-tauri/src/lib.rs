@@ -1,6 +1,10 @@
 mod api;
 mod core;
 
+use api::cloud_api::{
+    download_cloud_version, get_cloud_config, get_cloud_status, list_cloud_versions,
+    update_cloud_config, upload_cloud_save,
+};
 use api::explorer_api::{check_path_status, open_folder, scan_save_files};
 use api::history_api::{delete_history_item, get_history_item, list_history, rollback_version};
 use api::packager_api::{package_save, validate_paths};
@@ -8,14 +12,18 @@ use api::profile_api::{delete_profile, get_profile, list_profiles, save_profile}
 use api::settings_api::{
     clear_history_cache, get_app_settings, get_storage_info, update_app_settings,
 };
+use api::sync_api::{clear_sync_queue, force_sync_now, get_sync_status};
 use api::watcher_api::{start_watcher, stop_watcher};
+use core::cloud::{CloudBackend, MockCloudBackend};
 use core::history::HistoryManager;
 use core::profile::ProfileManager;
 use core::settings::SettingsManager;
+use core::sync::SyncManager;
 use core::watcher::WatcherManager;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tauri::Manager;
+use tokio::sync::Mutex;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -75,11 +83,44 @@ pub fn run() {
                 }
             };
 
+            // Cloud backend initialization
+            let cloud_storage_dir = app_data_dir.join("data").join("cloud_mock");
+            let cloud_downloads_dir = app_data_dir.join("data").join("cloud_downloads");
+
+            if let Err(e) = std::fs::create_dir_all(&cloud_storage_dir) {
+                tracing::warn!("[CLOUD] Failed to create cloud storage dir: {e}");
+            }
+            if let Err(e) = std::fs::create_dir_all(&cloud_downloads_dir) {
+                tracing::warn!("[CLOUD] Failed to create cloud downloads dir: {e}");
+            }
+
+            let cloud_backend = MockCloudBackend::new(cloud_storage_dir, cloud_downloads_dir);
+            let cloud: Box<dyn CloudBackend + Send> = Box::new(cloud_backend);
+
+            tracing::info!("[CLOUD] Mock cloud backend initialized");
+
             // Register state
+            let history_arc = Arc::new(history_manager);
+            let settings_arc = Arc::new(settings_manager);
+            let cloud_arc = Arc::new(Mutex::new(cloud));
+
             app.manage(WatcherManager::default());
-            app.manage(history_manager);
+            app.manage(history_arc.clone());
             app.manage(Arc::new(RwLock::new(profile_manager)));
-            app.manage(settings_manager);
+            app.manage(settings_arc.clone());
+            app.manage(cloud_arc.clone());
+
+            // Initialize SyncManager
+            let sync_manager =
+                SyncManager::new(app.handle().clone(), cloud_arc, history_arc, settings_arc);
+
+            app.manage(sync_manager.clone());
+
+            // Start background tasks after all state is managed
+            // Use tauri::async_runtime to spawn in Tauri's runtime context
+            tauri::async_runtime::spawn(async move {
+                sync_manager.start_background_task();
+            });
 
             Ok(())
         })
@@ -103,7 +144,16 @@ pub fn run() {
             clear_history_cache,
             scan_save_files,
             check_path_status,
-            open_folder
+            open_folder,
+            upload_cloud_save,
+            list_cloud_versions,
+            download_cloud_version,
+            get_cloud_config,
+            update_cloud_config,
+            get_cloud_status,
+            get_sync_status,
+            force_sync_now,
+            clear_sync_queue,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

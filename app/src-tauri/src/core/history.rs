@@ -43,7 +43,11 @@ pub struct HistoryManager {
 }
 
 impl HistoryManager {
-    pub fn init(base_dir: PathBuf, retention_limit: usize, auto_delete: bool) -> Result<Self, HistoryError> {
+    pub fn init(
+        base_dir: PathBuf,
+        retention_limit: usize,
+        auto_delete: bool,
+    ) -> Result<Self, HistoryError> {
         fs::create_dir_all(&base_dir).map_err(|err| HistoryError::Io(err.to_string()))?;
 
         let mut cache: HashMap<String, Vec<HistoryEntry>> = HashMap::new();
@@ -109,7 +113,11 @@ impl HistoryManager {
         }
     }
 
-    pub fn set_policy(&self, retention_limit: usize, auto_delete: bool) -> Result<(), HistoryError> {
+    pub fn set_policy(
+        &self,
+        retention_limit: usize,
+        auto_delete: bool,
+    ) -> Result<(), HistoryError> {
         {
             let mut retention_guard = self
                 .retention_limit
@@ -218,6 +226,46 @@ impl HistoryManager {
         Ok(Vec::new())
     }
 
+    pub fn get_games(&self) -> Vec<String> {
+        // Check cache first
+        if let Ok(guard) = self.cache.lock() {
+            if !guard.is_empty() {
+                return guard.keys().cloned().collect();
+            }
+        }
+
+        // Fallback to disk
+        let mut games = Vec::new();
+        if let Ok(entries) = fs::read_dir(&self.base_dir) {
+            for entry in entries.flatten() {
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_dir() {
+                        if let Some(name) = entry.file_name().to_str() {
+                            games.push(name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        games
+    }
+
+    pub fn get_latest_version(&self, game_id: &str) -> Option<HistoryEntry> {
+        // Try cache first
+        if let Ok(guard) = self.cache.lock() {
+            if let Some(entries) = guard.get(game_id) {
+                return entries.first().cloned();
+            }
+        }
+
+        // Fallback to list_history (which loads from disk)
+        if let Ok(entries) = self.list_history(game_id.to_string()) {
+            return entries.first().cloned();
+        }
+
+        None
+    }
+
     pub fn get_history_item(
         &self,
         game_id: String,
@@ -316,7 +364,10 @@ impl HistoryManager {
         calculate_dir_size(&self.base_dir)
     }
 
-    fn load_history_entries(game_dir: &Path, game_id: &str) -> Result<Vec<HistoryEntry>, HistoryError> {
+    fn load_history_entries(
+        game_dir: &Path,
+        game_id: &str,
+    ) -> Result<Vec<HistoryEntry>, HistoryError> {
         let mut history_entries: Vec<HistoryEntry> = Vec::new();
         let files = match fs::read_dir(game_dir) {
             Ok(files) => files,
@@ -425,7 +476,10 @@ impl HistoryManager {
         Ok(())
     }
 
-    fn enforce_retention(entries: &mut Vec<HistoryEntry>, limit: usize) -> Result<(), HistoryError> {
+    fn enforce_retention(
+        entries: &mut Vec<HistoryEntry>,
+        limit: usize,
+    ) -> Result<(), HistoryError> {
         while entries.len() > limit {
             if let Some(removed) = entries.pop() {
                 warn!(
