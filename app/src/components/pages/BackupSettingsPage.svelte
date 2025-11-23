@@ -219,7 +219,7 @@
   }
 
   .save-button {
-    width: 100%;
+    width: min(320px, 100%);
     padding: 12px;
     border: none;
     border-radius: 8px;
@@ -229,6 +229,7 @@
     font-size: 1rem;
     cursor: pointer;
     transition: opacity 0.2s;
+    align-self: flex-start;
   }
 
   .save-button:hover:not(:disabled) {

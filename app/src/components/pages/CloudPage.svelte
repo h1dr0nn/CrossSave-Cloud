@@ -192,9 +192,11 @@
               <p class="error">{loginError}</p>
             {/if}
 
-            <button type="submit" class="btn-primary btn-large">
-              Sign In
-            </button>
+            <div class="form-actions">
+              <button type="submit" class="btn-primary btn-large">
+                Sign In
+              </button>
+            </div>
           </form>
 
           <p class="note">
@@ -417,9 +419,11 @@
   }
 
   .input-stack {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    overflow: hidden;
     background: color-mix(in srgb, var(--surface-muted) 70%, transparent);
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface) 40%, transparent);
   }
@@ -433,13 +437,10 @@
     border-radius: var(--radius-sm);
   }
 
-  .input-stack .form-group + .form-group {
-    border-top: 1px solid var(--border);
-  }
-
   .input-stack .form-group {
     border: 0;
-    border-radius: 0;
+    padding: 0;
+    background: transparent;
   }
 
   label {
@@ -447,6 +448,15 @@
     margin-bottom: 0.5rem;
     font-weight: 500;
     color: var(--text-primary);
+  }
+
+  .form-actions {
+    margin-top: 12px;
+  }
+
+  .login-card .form-actions {
+    display: flex;
+    justify-content: flex-start;
   }
 
   input[type="email"],
@@ -482,7 +492,7 @@
   }
 
   .btn-large {
-    width: 100%;
+    width: min(320px, 100%);
     padding: 1rem;
     font-size: 1.05rem;
   }
@@ -676,6 +686,7 @@
   }
 
   .sync-actions .btn-large {
+    width: 100%;
     flex: 2;
   }
 
