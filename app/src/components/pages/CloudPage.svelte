@@ -394,26 +394,15 @@
   }
 
   .card {
-    margin: 0 0 1rem 0;
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  h3 {
-    margin: 1.5rem 0 1rem 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 24px;
     margin-bottom: 24px;
     box-shadow: var(--shadow-soft);
+    overflow: hidden;
+    display: grid;
+    gap: 16px;
   }
 
   .subtitle {
@@ -422,7 +411,12 @@
   }
 
   .form-group {
-    margin-bottom: 1.5rem;
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
   }
 
   label {
@@ -437,16 +431,20 @@
   input[type="text"] {
     width: 100%;
     padding: 0.75rem 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--surface-muted) 85%, transparent);
     color: var(--text-primary);
     font-size: 1rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease,
+      background-color 0.2s ease;
   }
 
   input:focus {
     outline: none;
     border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 22%, transparent);
+    background: var(--surface);
   }
 
   .btn-primary,
@@ -474,6 +472,7 @@
   .btn-primary {
     background: var(--accent-color);
     color: white;
+    box-shadow: 0 8px 18px color-mix(in srgb, var(--accent-color) 20%, transparent);
   }
 
   .btn-primary:hover:not(:disabled) {
@@ -481,9 +480,9 @@
   }
 
   .btn-secondary {
-    background: var(--bg-secondary);
+    background: var(--surface-muted);
     color: var(--text-primary);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border);
   }
 
   .btn-secondary:hover {
@@ -491,12 +490,12 @@
   }
 
   .btn-danger {
-    background: #ef4444;
+    background: var(--danger);
     color: white;
   }
 
   .btn-danger:hover {
-    background: #dc2626;
+    background: var(--danger-dark);
   }
 
   .btn-primary:disabled,
@@ -528,8 +527,9 @@
     justify-content: space-between;
     align-items: center;
     padding: 1rem;
-    background: var(--bg-secondary);
-    border-radius: 8px;
+    background: var(--surface-muted);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
   }
 
   .email {
@@ -546,8 +546,9 @@
     align-items: center;
     gap: 1rem;
     padding: 0.75rem;
-    background: var(--bg-secondary);
-    border-radius: 8px;
+    background: var(--surface-muted);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
   }
 
   .label {
@@ -559,8 +560,8 @@
     flex: 1;
     padding: 0.5rem;
     background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
     font-family: "SF Mono", "Monaco", monospace;
     font-size: 0.85rem;
     color: var(--text-primary);
@@ -568,6 +569,8 @@
 
   .devices-list {
     margin-top: 1.5rem;
+    display: grid;
+    gap: 12px;
   }
 
   .device-item {
@@ -575,9 +578,9 @@
     justify-content: space-between;
     align-items: center;
     padding: 1rem;
-    background: var(--bg-secondary);
-    border-radius: 8px;
-    margin-bottom: 0.75rem;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
   }
 
   .device-details {
@@ -605,12 +608,17 @@
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
     margin-bottom: 1rem;
+    background: color-mix(in srgb, var(--surface-muted) 60%, transparent);
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
   }
 
   .status-item {
     padding: 1rem;
-    background: var(--bg-secondary);
-    border-radius: 8px;
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -660,6 +668,8 @@
 
   .versions-list {
     margin-top: 1rem;
+    display: grid;
+    gap: 12px;
   }
 
   .version-item {
@@ -667,9 +677,9 @@
     justify-content: space-between;
     align-items: center;
     padding: 1rem;
-    background: var(--bg-secondary);
-    border-radius: 8px;
-    margin-bottom: 0.75rem;
+    background: var(--surface-muted);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
   }
 
   .version-info {
