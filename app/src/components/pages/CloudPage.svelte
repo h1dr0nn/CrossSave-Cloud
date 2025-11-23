@@ -25,13 +25,19 @@
   ];
 
   // Sync status
+  const syncStatusStore = cloudStore.syncStatus;
+  const cloudVersionsStore = cloudStore.cloudVersions;
+
   let syncStatus: any = null;
+  let selectedVersions: any[] = [];
   let syncMessage = "";
 
   // Cloud versions
   let selectedGame = "";
-  let cloudVersions: any[] = [];
   let loadingVersions = false;
+
+  $: syncStatus = $syncStatusStore;
+  $: selectedVersions = $cloudVersionsStore.get(selectedGame) ?? [];
 
   onMount(async () => {
     // Load initial data if logged in
@@ -55,8 +61,6 @@
   async function handleLogout() {
     await cloudStore.logout();
     deviceId = "";
-    syncStatus = null;
-    cloudVersions = [];
   }
 
   async function loadCloudStatus() {
@@ -70,7 +74,7 @@
 
   async function loadSyncStatus() {
     try {
-      syncStatus = await cloudStore.getSyncStatus();
+      await cloudStore.getSyncStatus();
     } catch (error) {
       console.error("Failed to load sync status:", error);
     }
@@ -107,7 +111,7 @@
 
     loadingVersions = true;
     try {
-      cloudVersions = await cloudStore.listCloudVersions(selectedGame, 10);
+      await cloudStore.listCloudVersions(selectedGame, 10);
     } catch (error) {
       console.error("Failed to load cloud versions:", error);
     } finally {
@@ -310,9 +314,9 @@
 
           {#if loadingVersions}
             <p class="loading">Loading versions...</p>
-          {:else if cloudVersions.length > 0}
+          {:else if selectedVersions.length > 0}
             <div class="versions-list">
-              {#each cloudVersions as version}
+              {#each selectedVersions as version}
                 <div class="version-item">
                   <div class="version-info">
                     <div class="version-header">
