@@ -22,7 +22,9 @@
       </div>
 
       <div class="content">
-        <ThemeSelector />
+        <div class="settings-card">
+          <ThemeSelector />
+        </div>
       </div>
     </main>
   </div>
@@ -41,13 +43,14 @@
   .settings-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-soft);
     padding: 24px;
     margin-bottom: 24px;
     max-width: 600px;
     margin-left: auto;
     margin-right: auto;
-    box-shadow: var(--shadow-soft);
   }
 
   .content-surface {

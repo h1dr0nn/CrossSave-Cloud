@@ -123,7 +123,7 @@
 
   .description {
     margin: 0;
-    color: #475569;
+    color: var(--muted);
     font-size: 14px;
   }
 
@@ -135,8 +135,8 @@
 
   .card {
     border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
-    border-radius: 8px;
-    padding: 12px;
+    border-radius: var(--radius);
+    padding: 16px;
     background: var(--surface);
     box-shadow: var(--shadow-soft);
   }
@@ -155,21 +155,31 @@
 
   .id {
     margin: 0;
-    color: #475569;
+    color: var(--muted);
     font-family: monospace;
     font-size: 13px;
   }
 
   button {
-    padding: 6px 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    background: #f8fafc;
+    padding: 8px 12px;
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+    border-radius: var(--radius-sm);
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent) 70%, var(--surface)),
+      var(--accent)
+    );
+    color: white;
+    font-weight: 600;
     cursor: pointer;
+    box-shadow: var(--shadow-soft);
+    transition: transform 0.12s ease, box-shadow 0.2s ease, opacity 0.2s ease;
   }
 
   button:hover {
-    background: #e2e8f0;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow);
+    opacity: 0.95;
   }
 
   .section {
@@ -192,29 +202,30 @@
 
   .status {
     margin-top: 10px;
-    padding: 8px;
-    border-radius: 6px;
-    background: #f8fafc;
-    border: 1px solid #cbd5e1;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent-muted) 40%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+    color: var(--text);
   }
 
   .status.ok {
-    border-color: #86efac;
-    background: #f0fdf4;
+    border-color: color-mix(in srgb, #22c55e 60%, var(--border));
+    background: color-mix(in srgb, #22c55e 14%, var(--surface));
   }
 
   .status.error {
-    border-color: #fca5a5;
-    background: #fff1f2;
+    border-color: color-mix(in srgb, var(--danger) 60%, var(--border));
+    background: color-mix(in srgb, var(--danger) 14%, var(--surface));
   }
 
   .status.pending {
-    border-color: #fbbf24;
-    background: #fffbeb;
+    border-color: color-mix(in srgb, #fbbf24 60%, var(--border));
+    background: color-mix(in srgb, #fbbf24 14%, var(--surface));
   }
 
   .placeholder {
-    color: #94a3b8;
+    color: var(--muted);
     margin: 0;
   }
 </style>
