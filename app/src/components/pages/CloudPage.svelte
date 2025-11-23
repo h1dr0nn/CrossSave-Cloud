@@ -160,26 +160,28 @@
           <p class="subtitle">Connect to CrossSave Cloud to sync your saves</p>
 
           <form on:submit|preventDefault={handleLogin}>
-            <div class="form-group">
-              <label for="email">Email</label>
-              <input
-                id="email"
-                type="email"
-                bind:value={email}
-                placeholder="your@email.com"
-                required
-              />
-            </div>
+            <div class="input-stack">
+              <div class="form-group">
+                <label for="email">Email</label>
+                <input
+                  id="email"
+                  type="email"
+                  bind:value={email}
+                  placeholder="your@email.com"
+                  required
+                />
+              </div>
 
-            <div class="form-group">
-              <label for="password">Password</label>
-              <input
-                id="password"
-                type="password"
-                bind:value={password}
-                placeholder="••••••••"
-                required
-              />
+              <div class="form-group">
+                <label for="password">Password</label>
+                <input
+                  id="password"
+                  type="password"
+                  bind:value={password}
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
             </div>
 
             {#if loginError}
@@ -410,13 +412,30 @@
     margin-bottom: 2rem;
   }
 
+  .input-stack {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: color-mix(in srgb, var(--surface-muted) 70%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface) 40%, transparent);
+  }
+
   .form-group {
     display: grid;
     gap: 8px;
-    padding: 12px;
-    background: var(--surface-muted);
+    padding: 12px 14px;
+    background: color-mix(in srgb, var(--surface) 85%, transparent);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
+  }
+
+  .input-stack .form-group + .form-group {
+    border-top: 1px solid var(--border);
+  }
+
+  .input-stack .form-group {
+    border: 0;
+    border-radius: 0;
   }
 
   label {
@@ -470,9 +489,14 @@
   }
 
   .btn-primary {
-    background: var(--accent-color);
-    color: white;
-    box-shadow: 0 8px 18px color-mix(in srgb, var(--accent-color) 20%, transparent);
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent-color) 92%, transparent),
+      var(--accent-hover)
+    );
+    color: #fff;
+    border: 1px solid color-mix(in srgb, var(--accent-color) 35%, transparent);
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--accent-color) 26%, transparent);
   }
 
   .btn-primary:hover:not(:disabled) {
