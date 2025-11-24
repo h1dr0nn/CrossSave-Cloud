@@ -324,7 +324,7 @@ export const cloudStore = {
 
     async updateCloudMode(mode: CloudMode): Promise<void> {
         bindEvents();
-        await invoke('update_cloud_mode', { mode });
+        await invoke('update_cloud_mode', { newMode: mode });
         cloudMode.set(mode);
     },
 

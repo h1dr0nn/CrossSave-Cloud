@@ -306,7 +306,9 @@ pub async fn update_cloud_mode(
         (*settings_manager).clone(),
         parsed_mode.clone(),
         updated_settings.clone(),
-    ) {
+    )
+    .await
+    {
         return Err(cloud_error_to_string(err));
     }
 

@@ -114,13 +114,13 @@ pub fn run() {
 
             let cloud_arc: CloudBackendState = Arc::new(Mutex::new(cloud));
 
-            if let Err(err) = switch_cloud_backend(
+            if let Err(err) = tauri::async_runtime::block_on(switch_cloud_backend(
                 &app.handle(),
                 &cloud_arc,
                 settings_arc.clone(),
                 current_settings.cloud_mode.clone(),
                 current_settings.clone(),
-            ) {
+            )) {
                 tracing::error!("[CLOUD] Failed to initialize cloud backend: {err}");
             }
 
@@ -190,7 +190,7 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-pub(crate) fn switch_cloud_backend(
+pub(crate) async fn switch_cloud_backend(
     app: &tauri::AppHandle,
     cloud_state: &CloudBackendState,
     settings_manager: Arc<SettingsManager>,
@@ -216,7 +216,7 @@ pub(crate) fn switch_cloud_backend(
     };
 
     {
-        let mut guard = cloud_state.blocking_lock();
+        let mut guard = cloud_state.lock().await;
         *guard = backend;
     }
 

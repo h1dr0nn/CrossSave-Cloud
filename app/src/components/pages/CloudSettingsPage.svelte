@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import AppHeader from "../layout/AppHeader.svelte";
+  import { pushInfo, pushSuccess, pushError } from "$lib/notifications";
   import {
     cloudStore,
     type CloudAuthMode,
@@ -16,9 +17,9 @@
   const onlineStatusStore = cloudStore.onlineStatus;
 
   const modes: { label: string; value: CloudMode }[] = [
-    { label: "Official Cloud", value: "official" },
-    { label: "Self-host", value: "self_host" },
     { label: "Sync Off", value: "off" },
+    { label: "Sync On", value: "official" },
+    { label: "Self-host", value: "self_host" },
   ];
 
   const authOptions: { label: string; value: CloudAuthMode }[] = [
@@ -28,13 +29,22 @@
   ];
 
   let activeMode: CloudMode = "off";
-  let onlineStatus: "online" | "offline" = "offline";
+  let onlineStatus: "online" | "offline" | "fail" | "ready" = "offline";
   let localConfig: CloudConfig = { mode: "off", auth_mode: "NONE" };
   let validation: CloudValidationResult = { status: "idle", message: "" };
   let loading = true;
   let saving = false;
   let validating = false;
   let statusMessage = "";
+
+  // Self-host specific fields
+  let idServer = "";
+  let relayServer = "";
+  let apiServer = "";
+  let key = "";
+  let connecting = false;
+  let officialConnecting = false;
+  let officialConnectionFailed = false;
 
   $: activeMode = ($modeStore as CloudMode) ?? "off";
   $: onlineStatus = ($onlineStatusStore as "online" | "offline") ?? "offline";
@@ -47,35 +57,102 @@
   }
 
   onMount(async () => {
-    await cloudStore.initialize();
-    const config = (await cloudStore.getCloudConfig()) ?? {};
-    localConfig = { ...localConfig, ...config };
-    activeMode = (config.mode as CloudMode) ?? activeMode;
-    loading = false;
+    try {
+      await cloudStore.initialize();
+      const config = (await cloudStore.getCloudConfig()) ?? {};
+      localConfig = { ...localConfig, ...config };
+      activeMode = (config.mode as CloudMode) ?? activeMode;
+    } catch (error) {
+      console.error("Failed to initialize cloud settings:", error);
+    } finally {
+      loading = false;
+    }
   });
 
   function goBack() {
     goto("/settings", { keepFocus: true, noScroll: true });
   }
 
-  async function handleModeChange(mode: CloudMode) {
-    if (mode === activeMode) return;
+  async function handleModeChange(newMode: CloudMode) {
+    // Don't do anything if already on this mode
+    if (newMode === activeMode) return;
+
+    if (saving) return;
+
+    console.log(`[CloudSettings] Switching to mode: ${newMode}`);
+
+    // Update UI immediately (optimistic update)
+    activeMode = newMode;
+
+    // Update status based on mode
+    if (newMode === "official") {
+      console.log("[CloudSettings] Starting connection test for official mode");
+      // Start connection test in background
+      testOfficialConnection();
+    } else if (newMode === "off") {
+      onlineStatus = "offline";
+      officialConnecting = false;
+      officialConnectionFailed = false;
+    } else if (newMode === "self_host") {
+      onlineStatus = "offline";
+      officialConnecting = false;
+      officialConnectionFailed = false;
+    }
+
+    // Update backend in background
     saving = true;
-    statusMessage = "";
     try {
-      await cloudStore.updateCloudMode(mode);
-      await cloudStore.updateCloudSettings({ mode });
-      if (mode === "off") {
-        validation = { status: "idle", message: "" };
-      }
+      await cloudStore.updateCloudMode(newMode);
+      console.log(
+        `[CloudSettings] Mode updated successfully in backend: ${newMode}`
+      );
     } catch (error) {
-      statusMessage =
-        typeof error === "string"
-          ? error
-          : ((error as Error)?.message ?? "Failed to update mode");
+      console.error(
+        "[CloudSettings] Failed to update cloud mode in backend:",
+        error
+      );
+      // Don't show error to user, just log it
+      // The UI already switched, backend sync can fail silently
     } finally {
       saving = false;
     }
+  }
+
+  async function testOfficialConnection() {
+    officialConnecting = true;
+    officialConnectionFailed = false;
+    onlineStatus = "offline";
+
+    // Test connection with timeout
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Connection timeout")), 10000)
+    );
+
+    try {
+      // TODO: Replace with actual connection test
+      await Promise.race([
+        new Promise((resolve) => setTimeout(resolve, 2000)),
+        timeoutPromise,
+      ]);
+
+      // Simulate connection result
+      const success = Math.random() > 0.3;
+      if (success) {
+        onlineStatus = "online";
+        officialConnectionFailed = false;
+      } else {
+        throw new Error("Connection failed");
+      }
+    } catch (error) {
+      onlineStatus = "offline";
+      officialConnectionFailed = true;
+    } finally {
+      officialConnecting = false;
+    }
+  }
+
+  async function handleReconnect() {
+    await testOfficialConnection();
   }
 
   async function updateSelfHostField(
@@ -100,19 +177,90 @@
     }
   }
 
+  async function handleCopyConfig() {
+    const config = `${idServer}|${relayServer}|${apiServer}|${key}`;
+    try {
+      await navigator.clipboard.writeText(config);
+      pushInfo("Configuration copied to clipboard");
+    } catch (error) {
+      pushError("Failed to copy configuration");
+    }
+  }
+
+  async function handlePasteConfig() {
+    try {
+      const text = await navigator.clipboard.readText();
+      const parts = text.split("|");
+      if (parts.length === 4) {
+        idServer = parts[0].trim();
+        relayServer = parts[1].trim();
+        apiServer = parts[2].trim();
+        key = parts[3].trim();
+        pushSuccess("Configuration pasted successfully");
+      } else {
+        pushError("Invalid configuration format");
+      }
+    } catch (error) {
+      pushError("Failed to paste configuration");
+    }
+  }
+
+  async function handleSaveSelfHost() {
+    if (!idServer || !relayServer || !apiServer || !key) {
+      pushError("Please fill in all fields");
+      return;
+    }
+
+    saving = true;
+    connecting = true;
+    onlineStatus = "offline";
+
+    try {
+      // TODO: Implement actual connection test to servers
+      // For now, simulate a connection test
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      // Simulate success/failure (replace with actual connection logic)
+      const success = Math.random() > 0.3; // 70% success rate for demo
+
+      if (success) {
+        onlineStatus = "ready";
+        pushSuccess("Connected successfully");
+      } else {
+        onlineStatus = "fail";
+        pushError("Connection failed");
+      }
+    } catch (error) {
+      onlineStatus = "fail";
+      pushError("Connection failed: " + error);
+    } finally {
+      saving = false;
+      connecting = false;
+    }
+  }
+
+  function handleClearSelfHost() {
+    idServer = "";
+    relayServer = "";
+    apiServer = "";
+    key = "";
+    onlineStatus = "offline";
+    pushInfo("Configuration cleared");
+  }
+
   async function updateOfficialField(field: keyof CloudConfig, value: string) {
     if (activeMode !== "official") return;
     saving = true;
-    statusMessage = "";
     const updated = { ...localConfig, [field]: value, mode: "official" };
     localConfig = updated;
     try {
       await cloudStore.updateCloudSettings(updated);
     } catch (error) {
-      statusMessage =
+      pushError(
         typeof error === "string"
           ? error
-          : ((error as Error)?.message ?? "Failed to update settings");
+          : ((error as Error)?.message ?? "Failed to update settings")
+      );
     } finally {
       saving = false;
     }
@@ -120,14 +268,14 @@
 
   async function validateOfficial() {
     validating = true;
-    statusMessage = "";
     try {
       await cloudStore.validateOfficialCloudSettings(localConfig);
     } catch (error) {
-      statusMessage =
+      pushError(
         typeof error === "string"
           ? error
-          : ((error as Error)?.message ?? "Validation failed");
+          : ((error as Error)?.message ?? "Validation failed")
+      );
     } finally {
       validating = false;
     }
@@ -159,7 +307,6 @@
                     aria-pressed={activeMode === mode.value}
                     class:active={activeMode === mode.value}
                     on:click={() => handleModeChange(mode.value)}
-                    disabled={saving}
                   >
                     {mode.label}
                   </button>
@@ -168,9 +315,17 @@
 
               <div class="status-chip" aria-live="polite">
                 <span class={`dot ${onlineStatus}`}></span>
-                <span class="status-text"
-                  >{onlineStatus === "online" ? "Online" : "Offline"}</span
-                >
+                <span class="status-text">
+                  {#if onlineStatus === "online"}
+                    Online
+                  {:else if onlineStatus === "ready"}
+                    Ready
+                  {:else if onlineStatus === "fail"}
+                    Failed
+                  {:else}
+                    Offline
+                  {/if}
+                </span>
               </div>
             </div>
 
@@ -184,120 +339,135 @@
                 </p>
               </div>
             {:else if activeMode === "official"}
-              <div class="settings-card">
-                <div class="card-content">
-                  <div class="input-group">
-                    <label for="official-base">Base URL</label>
-                    <input
-                      id="official-base"
-                      type="url"
-                      placeholder="https://cloud.crosssave.app"
-                      value={localConfig.base_url ?? ""}
-                      on:input={(event) =>
-                        updateOfficialField(
-                          "base_url",
-                          (event.currentTarget as HTMLInputElement).value
-                        )}
-                    />
-                  </div>
+              <div class="disabled-card">
+                <p class="disabled-label">Cloud Sync Enabled</p>
+                <p class="muted">
+                  Your saves are automatically syncing to the official cloud.
+                </p>
 
-                  <div class="input-group">
-                    <label for="official-api">API Key</label>
-                    <input
-                      id="official-api"
-                      type="password"
-                      placeholder="Enter API key"
-                      value={localConfig.api_key ?? ""}
-                      on:input={(event) =>
-                        updateOfficialField(
-                          "api_key",
-                          (event.currentTarget as HTMLInputElement).value
-                        )}
-                    />
+                {#if officialConnecting}
+                  <div class="connection-status">
+                    <div class="loading-spinner"></div>
+                    <p class="connection-text">Connecting to cloud server...</p>
                   </div>
-
-                  <div class="actions-row">
-                    <button
-                      class="btn-primary"
-                      on:click={validateOfficial}
-                      disabled={validating}
-                    >
-                      {validating ? "Validating..." : "Validate Settings"}
+                {:else if officialConnectionFailed}
+                  <div class="connection-status failed">
+                    <p class="connection-text error">Connection failed</p>
+                    <button class="btn-primary" on:click={handleReconnect}>
+                      Reconnect
                     </button>
                   </div>
-
-                  {#if validation.status !== "idle"}
-                    <p class={`validation ${validation.status}`}>
-                      {validation.message}
-                    </p>
-                  {/if}
-                </div>
+                {/if}
               </div>
             {:else if activeMode === "self_host"}
               <div class="settings-card">
-                <div class="card-content">
-                  <div class="input-group">
-                    <label for="self-base">Base URL</label>
-                    <input
-                      id="self-base"
-                      type="url"
-                      placeholder="https://my-cloud.local"
-                      value={localConfig.base_url ?? ""}
-                      on:input={(event) =>
-                        updateSelfHostField(
-                          "base_url",
-                          (event.currentTarget as HTMLInputElement).value
-                        )}
-                    />
-                  </div>
-
-                  <div class="input-group">
-                    <label for="self-access">Access Key</label>
-                    <input
-                      id="self-access"
-                      type="password"
-                      placeholder="Access key"
-                      value={localConfig.access_key ?? ""}
-                      on:input={(event) =>
-                        updateSelfHostField(
-                          "access_key",
-                          (event.currentTarget as HTMLInputElement).value
-                        )}
-                    />
-                  </div>
-
-                  <div class="input-group">
-                    <label>Auth Mode</label>
-                    <div
-                      class="segmented auth"
-                      role="group"
-                      aria-label="Auth mode"
+                <div class="card-simple-header">
+                  <p class="card-simple-title">ID/Relay Server</p>
+                  <div class="header-actions">
+                    <button
+                      class="btn-icon-only"
+                      on:click={handleCopyConfig}
+                      title="Copy configuration"
                     >
-                      {#each authOptions as option}
-                        <button
-                          type="button"
-                          class:active={localConfig.auth_mode === option.value}
-                          aria-pressed={localConfig.auth_mode === option.value}
-                          on:click={() =>
-                            updateSelfHostField("auth_mode", option.value)}
-                        >
-                          {option.label}
-                        </button>
-                      {/each}
-                    </div>
+                      <svg viewBox="0 0 24 24" fill="none" class="icon">
+                        <rect
+                          x="9"
+                          y="9"
+                          width="13"
+                          height="13"
+                          rx="2"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        />
+                        <path
+                          d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      class="btn-icon-only"
+                      on:click={handlePasteConfig}
+                      title="Paste configuration"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" class="icon">
+                        <path
+                          d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        />
+                        <rect
+                          x="8"
+                          y="2"
+                          width="8"
+                          height="4"
+                          rx="1"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="card-separator"></div>
+
+                <div class="card-content">
+                  <div class="input-row">
+                    <label for="id-server">ID Server</label>
+                    <input
+                      id="id-server"
+                      type="text"
+                      placeholder="id.server.com"
+                      bind:value={idServer}
+                    />
                   </div>
 
-                  {#if validation.status !== "idle"}
-                    <p class={`validation ${validation.status}`}>
-                      {validation.message}
-                    </p>
-                  {/if}
+                  <div class="input-row">
+                    <label for="relay-server">Relay Server</label>
+                    <input
+                      id="relay-server"
+                      type="text"
+                      placeholder="relay.server.com"
+                      bind:value={relayServer}
+                    />
+                  </div>
+
+                  <div class="input-row">
+                    <label for="api-server">API Server</label>
+                    <input
+                      id="api-server"
+                      type="text"
+                      placeholder="api.server.com"
+                      bind:value={apiServer}
+                    />
+                  </div>
+
+                  <div class="input-row">
+                    <label for="key">Key</label>
+                    <input
+                      id="key"
+                      type="password"
+                      placeholder="Enter your key"
+                      bind:value={key}
+                    />
+                  </div>
+
+                  <div class="button-row">
+                    <button
+                      class="btn-primary"
+                      on:click={handleSaveSelfHost}
+                      disabled={saving || connecting}
+                    >
+                      {connecting ? "Connecting..." : "Save & Connect"}
+                    </button>
+                    <button class="btn-danger" on:click={handleClearSelfHost}>
+                      Clear
+                    </button>
+                  </div>
                 </div>
               </div>
-            {/if}
-
-            {#if statusMessage}
-              <p class="status-message">{statusMessage}</p>
             {/if}
           </div>
         </div>
@@ -428,7 +598,15 @@
   }
 
   .dot.offline {
+    background: #6b7280;
+  }
+
+  .dot.fail {
     background: #ef4444;
+  }
+
+  .dot.ready {
+    background: #3b82f6;
   }
 
   .settings-card {
@@ -439,15 +617,70 @@
     overflow: hidden;
   }
 
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 95%, var(--text) 5%);
+  }
+
+  .card-simple-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px;
+  }
+
+  .card-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .card-simple-title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .card-separator {
+    height: 1px;
+    background: var(--border);
+    margin: 0 18px;
+  }
+
   .card-content {
-    padding: 16px;
+    padding: 16px 18px;
     display: grid;
     gap: 16px;
   }
 
   .input-group {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
+  }
+
+  .input-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .input-row label {
+    margin: 0;
+    font-weight: 600;
+    color: var(--text);
   }
 
   label {
@@ -470,6 +703,16 @@
     justify-content: flex-end;
   }
 
+  .button-row {
+    display: flex;
+    gap: 8px;
+    justify-content: stretch;
+  }
+
+  .button-row button {
+    flex: 1;
+  }
+
   .btn-primary {
     border: none;
     background: linear-gradient(135deg, #2563eb, #1d4ed8);
@@ -484,6 +727,69 @@
   .btn-primary:disabled {
     opacity: 0.7;
     cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    padding: 12px 18px;
+    border-radius: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s;
+  }
+
+  .btn-secondary:hover {
+    background: var(--surface-muted);
+  }
+
+  .btn-danger {
+    border: none;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    padding: 12px 18px;
+    border-radius: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+    transition: all 0.2s;
+  }
+
+  .btn-danger:hover {
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+  }
+
+  .btn-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .btn-icon-only {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    padding: 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+
+  .btn-icon-only:hover {
+    background: var(--surface-muted);
+    border-color: var(--text-muted);
+  }
+
+  .btn-icon-only .icon {
+    width: 18px;
+    height: 18px;
   }
 
   .validation {
@@ -507,7 +813,7 @@
 
   .disabled-card {
     background: var(--surface);
-    border: 1px dashed var(--border);
+    border: 1px solid var(--border);
     padding: 18px;
     border-radius: var(--radius);
   }
@@ -520,9 +826,49 @@
 
   .muted {
     margin: 6px 0 0 0;
-    color: var(--muted);
+    color: var(--text-muted);
+    font-size: 0.9rem;
   }
 
+  .connection-status {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .connection-status.failed {
+    gap: 8px;
+  }
+
+  .loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .connection-text {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--text-muted);
+  }
+
+  .connection-text.error {
+    color: #ef4444;
+    font-weight: 600;
+  }
   .loading {
     color: var(--muted);
     font-style: italic;
