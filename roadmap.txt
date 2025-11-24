@@ -1,7 +1,7 @@
 PROJECT: CrossSave Cloud
 VERSION: 0.1
 TARGET PLATFORM: Linux-first, Android later
-GOAL: Full Local Logic + GUI before Cloud Sync
+GOAL: Local + Cloud Sync + Cross-platform Release
 
 ========================================
 PHASE 1 — LOCAL CORE SYSTEM (LINUX)
@@ -39,10 +39,10 @@ STATUS: DONE
 - Error toast + logging
 - Minimal layout for testing backend
 
-----------------------------------------
+========================================
 PHASE 2 — LOCAL FULL UI/UX
-STATUS: IN PROGRESS
-----------------------------------------
+STATUS: DONE
+========================================
 
 2.1 Main Application UI (DONE)
 - Sidebar: Emulator list
@@ -67,70 +67,147 @@ STATUS: IN PROGRESS
 - Backup retention settings
 - App storage settings
 
-----------------------------------------
+========================================
 PHASE 3 — CLOUD SYNC SYSTEM
-STATUS: IN PROGRESS
-----------------------------------------
+STATUS: DONE
+========================================
 
 3.1 Cloud API (DONE)
+- HTTP-based backend abstraction (CloudBackend)
 - Upload archive
 - List versions
 - Download version
-- Device_id assignment
+- Device_id assignment & persistence
+- Cloud settings persisted in AppSettings
 
 3.2 Sync Logic (DONE)
-- Latest-wins + conflict detection
-- Tracking upload queue
-- Throttled sync
+- Latest-wins + conflict detection (hash + timestamp + device_id)
+- Tracking upload queue with persistence
+- Throttled sync + backoff retry
+- Online/offline detection and sync pausing
+- Download path: fetch, extract, record to local history
 
 3.3 Cloud Account UI (DONE)
-- Login page
-- Device management
-- Manual Sync button
-- Cloud version history
+- Login page (real backend)
+- Device management (list/remove)
+- Manual Sync button wired to sync engine
+- Cloud version history with real metadata
+- Sync/download progress & error indicators
+- Cloud settings validation (base URL, API key)
 
-----------------------------------------
-PHASE 4 — ANDROID VERSION
+========================================
+PHASE 4 — CLOUD MODES & DEPLOYMENT
 STATUS: PENDING
-----------------------------------------
+========================================
 
-4.1 Android Storage Access
-- SAF path selector
-- Persisted URI permissions
+Goal: Support 3 fully independent cloud modes  
+- OFFICIAL CLOUD (Cloudflare Worker + R2 + presigned URLs)  
+- SELF-HOST (Docker backend the user controls)  
+- SYNC OFF (local-only)
 
-4.2 Android Watcher
-- FileObserver wrapper
-- Rust+Tauri mobile bridge
+4.1 Cloud Mode Switcher  
+- Add global selector: OFFICIAL / SELF_HOST / SYNC_OFF  
+- Automatically switch cloud backend implementation  
+- Disable all cloud actions when SYNC_OFF  
+- UI indicator for current cloud mode  
 
-4.3 Android Sync Engine
-- Battery-optimized background rules
-- WiFi-only syncing
+4.2 Official Cloud (Cloudflare Worker + R2 + Presigned Upload/Download)  
+- Worker endpoints:  
+  - `/login`, `/device/register`, `/device/list`  
+  - `/save/upload-url` (presigned PUT)  
+  - `/save/download-url` (presigned GET)  
+  - `/save/list`  
+- Upload pipeline:  
+  1. Request presigned URL  
+  2. PUT archive directly to R2  
+  3. Notify Worker → update metadata  
+- Full metadata: sha256, size, file list, timestamp, device_id  
+- Security: Cloudflare Access / Signed tokens / Zero trust rules  
 
-----------------------------------------
-PHASE 5 — RELEASE & POLISH
+4.3 Self-host Cloud (Docker Image)  
+- Simple, user-managed API that mirrors official cloud schema  
+- Supported API modes:  
+  - No-auth (simple access key)  
+  - Access-key only  
+  - Email/password auth (optional)  
+- Same metadata schema, same sync logic  
+- App settings:  
+  - `self_host_base_url`  
+  - `self_host_access_key`  
+  - `auth_mode` (NONE / ACCESS_KEY / USERPASS)  
+- Tauri backend: SelfHostHttpBackend  
+- File storage: local disk or mounted volume  
+
+4.4 Cloud Security & Permissions  
+- Validate cloud configuration before enabling sync  
+- Unified error mapping (Official & Self-host)  
+- Online/offline detection & UI indicators  
+- Logging tags: `[CLOUD_OFFICIAL]`, `[CLOUD_SELF_HOST]`
+
+========================================
+PHASE 5 — ANDROID PLATFORM & PACKAGING
 STATUS: PENDING
-----------------------------------------
+========================================
 
-5.1 Performance / Optimizations
-- Reduce memory footprint
-- Optimize watchers
-- Async packaging pipeline
+5.1 Android Storage Access  
+- SAF directory selector  
+- Persisted URI permissions per emulator  
+- UI guidance for selecting correct folders  
 
-5.2 Platform Packaging
-- Linux AppImage / .deb / Flatpak
-- Android APK / AAB
+5.2 Android Watcher  
+- FileObserver wrapper per SAF folder  
+- Fallback polling scan  
+- Bridge watcher events into sync engine  
 
-5.3 Nice-to-have Features
-- LAN sync mode
-- Steam Deck presets
-- Plugin system for community profiles
+5.3 Android Sync UX  
+- Manual sync button  
+- Auto sync on app open/resume  
+- “WiFi only” mode  
+- Mobile-friendly progress indicators  
+
+5.4 Android Packaging  
+- Debug APK  
+- Release APK + AAB  
+- Keystore signing  
+- Multi-device smoke tests  
+
+========================================
+PHASE 6 — WEB DASHBOARD & FINAL POLISH
+STATUS: PENDING
+========================================
+
+6.1 Web Dashboard (Official & Self-host)  
+- Login & auth UI  
+- Device list + revoke  
+- Game list + version history  
+- Version metadata viewer (size, hash, device, timestamp)  
+- Rollback / mark preferred version (self-host only)  
+- Built with Cloudflare Pages or SvelteKit  
+
+6.2 Developer & Plugin Ecosystem  
+- Import/export emulator profiles  
+- Community profile database  
+- Self-host extensions & reverse proxy templates  
+
+6.3 Performance & Optimizations  
+- Reduce memory usage  
+- Faster packaging pipeline  
+- Optimize watcher + sync intervals  
+- Better production logs  
+
+6.4 Multi-platform Packaging & Release  
+- Linux AppImage  
+- Linux .deb  
+- Linux Flatpak  
+- Android APK/AAB  
+- Full documentation (Official Cloud + Self-host + FAQ)
 
 ========================================
 CURRENT PROJECT POSITION
 ========================================
-PHASE: 
-SUBTASK: 
-NEXT: 
+PHASE: 4 — Cloud Modes & Deployment  
+NEXT: Implement Cloud Mode Switcher + Official Cloud (Worker + R2)
 
 ========================================
 END
+
