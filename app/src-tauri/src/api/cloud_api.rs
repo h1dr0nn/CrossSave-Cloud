@@ -303,7 +303,7 @@ pub async fn update_cloud_mode(
     if let Err(err) = switch_cloud_backend(
         &app,
         &cloud,
-        settings_manager.clone(),
+        (*settings_manager).clone(),
         parsed_mode.clone(),
         updated_settings.clone(),
     ) {
