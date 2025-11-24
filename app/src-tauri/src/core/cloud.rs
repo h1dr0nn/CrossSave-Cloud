@@ -1,21 +1,24 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::Utc;
+use reqwest::{multipart, Client};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
+use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::core::packager::SaveMetadata;
+use crate::core::settings::SettingsManager;
 
-// ============================================================================
+// =============================================================================
 // Configuration
-// ============================================================================
+// =============================================================================
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub struct CloudConfig {
     pub enabled: bool,
     pub base_url: String,
@@ -36,9 +39,9 @@ impl Default for CloudConfig {
     }
 }
 
-// ============================================================================
+// =============================================================================
 // Cloud Version Summary
-// ============================================================================
+// =============================================================================
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CloudVersionSummary {
@@ -60,9 +63,9 @@ pub struct CloudDevice {
     pub last_sync: u64,
 }
 
-// ============================================================================
+// =============================================================================
 // Error Types
-// ============================================================================
+// =============================================================================
 
 #[derive(Debug, Error)]
 #[allow(dead_code)]
@@ -85,305 +88,170 @@ pub enum CloudError {
     Unauthorized(String),
 }
 
-// ============================================================================
+// =============================================================================
 // Cloud Backend Trait
-// ============================================================================
+// =============================================================================
 
 #[async_trait]
 pub trait CloudBackend: Send + Sync {
     async fn login(&self, email: String, password: String) -> Result<String, CloudError>;
-    /// Upload a save archive to cloud storage
     async fn upload_archive(
         &self,
         metadata: SaveMetadata,
         archive_path: PathBuf,
     ) -> Result<CloudVersionSummary, CloudError>;
-
-    /// List all versions for a specific game
     async fn list_versions(
         &self,
         game_id: String,
         limit: Option<usize>,
     ) -> Result<Vec<CloudVersionSummary>, CloudError>;
-
-    /// Download a specific version from cloud storage
     async fn download_version(
         &self,
         game_id: String,
         version_id: String,
         target_path: PathBuf,
     ) -> Result<(), CloudError>;
-
-    /// Ensure device ID exists and return it
     fn ensure_device_id(&self) -> Result<String, CloudError>;
-
     async fn list_devices(&self, token: String) -> Result<Vec<CloudDevice>, CloudError>;
-
     async fn remove_device(&self, token: String, device_id: String) -> Result<(), CloudError>;
-
     fn get_device_id(&self) -> Result<String, CloudError>;
 }
 
-// ============================================================================
-// Mock Cloud Backend (Filesystem-based)
-// ============================================================================
+// =============================================================================
+// HTTP Cloud Backend
+// =============================================================================
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct GameManifest {
-    game_id: String,
-    versions: Vec<CloudVersionSummary>,
+#[derive(Clone)]
+pub struct HttpCloudBackend {
+    client: Client,
+    settings: Arc<SettingsManager>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct AuthRecord {
-    email: String,
+#[derive(Deserialize)]
+struct LoginResponse {
     token: String,
-    issued_at: u64,
-    expires_at: u64,
+    device_id: Option<String>,
 }
 
-pub struct MockCloudBackend {
-    storage_dir: PathBuf,
-    #[allow(dead_code)]
-    downloads_dir: PathBuf,
+#[derive(Deserialize)]
+struct RegisterDeviceResponse {
     device_id: String,
 }
 
-impl MockCloudBackend {
-    pub fn new(storage_dir: PathBuf, downloads_dir: PathBuf) -> Self {
-        // Generate device ID if not exists
-        let device_id = Self::load_or_generate_device_id(&storage_dir);
+impl HttpCloudBackend {
+    pub fn new(settings: Arc<SettingsManager>) -> Result<Self, CloudError> {
+        let config = settings
+            .get_settings()
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?
+            .cloud;
+        let timeout = config.timeout_seconds.max(1);
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(timeout))
+            .build()
+            .map_err(|e| CloudError::InvalidConfig(format!("client build failed: {e}")))?;
 
-        info!(
-            "[CLOUD] MockCloudBackend initialized (storage={}, downloads={}, device_id={})",
-            storage_dir.display(),
-            downloads_dir.display(),
-            device_id
-        );
+        Ok(Self { client, settings })
+    }
 
-        Self {
-            storage_dir,
-            downloads_dir,
-            device_id,
+    fn validate_base_url(&self) -> Result<String, CloudError> {
+        let config = self
+            .settings
+            .get_settings()
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?
+            .cloud;
+        if config.base_url.trim().is_empty() {
+            return Err(CloudError::InvalidConfig("base_url missing".into()));
         }
+        Ok(config.base_url.trim_end_matches('/').to_string())
     }
 
-    fn load_or_generate_device_id(storage_dir: &PathBuf) -> String {
-        let device_id_file = storage_dir.join("device_id.txt");
-
-        if device_id_file.exists() {
-            if let Ok(id) = fs::read_to_string(&device_id_file) {
-                let trimmed = id.trim();
-                if !trimmed.is_empty() {
-                    debug!(
-                        "[CLOUD] Loaded existing device_id from {}",
-                        device_id_file.display()
-                    );
-                    return trimmed.to_string();
-                }
-            }
+    fn get_auth_header(&self) -> Result<String, CloudError> {
+        let config = self
+            .settings
+            .get_settings()
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?
+            .cloud;
+        if config.api_key.trim().is_empty() {
+            return Err(CloudError::Unauthorized("api_key missing".into()));
         }
-
-        // Generate new device ID
-        let new_id = Uuid::new_v4().to_string();
-
-        // Try to persist it
-        if let Err(e) = fs::create_dir_all(storage_dir) {
-            warn!("[CLOUD] Failed to create storage dir for device_id: {e}");
-        } else if let Err(e) = fs::write(&device_id_file, &new_id) {
-            warn!("[CLOUD] Failed to persist device_id: {e}");
-        } else {
-            info!("[CLOUD] Generated and saved new device_id: {}", new_id);
-        }
-
-        new_id
+        Ok(format!("Bearer {}", config.api_key))
     }
 
-    fn game_dir(&self, game_id: &str) -> PathBuf {
-        self.storage_dir.join(game_id)
-    }
+    async fn register_device(&self, token: &str) -> Result<String, CloudError> {
+        let base_url = self.validate_base_url()?;
+        let name = std::env::var("HOSTNAME")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Current Device".to_string());
+        let resp = self
+            .client
+            .post(format!("{}/device/register", base_url))
+            .header("Authorization", token)
+            .json(&serde_json::json!({ "name": name }))
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
-    fn manifest_path(&self, game_id: &str) -> PathBuf {
-        self.game_dir(game_id).join("manifest.json")
-    }
-
-    fn archive_path(&self, game_id: &str, version_id: &str) -> PathBuf {
-        self.game_dir(game_id).join(format!("{}.zip", version_id))
-    }
-
-    fn auth_path(&self) -> PathBuf {
-        self.storage_dir.join("auth.json")
-    }
-
-    fn devices_path(&self) -> PathBuf {
-        self.storage_dir.join("devices.json")
-    }
-
-    fn load_manifest(&self, game_id: &str) -> Result<GameManifest, CloudError> {
-        let manifest_path = self.manifest_path(game_id);
-
-        if !manifest_path.exists() {
-            debug!("[CLOUD] No manifest exists for game_id={}", game_id);
-            return Ok(GameManifest {
-                game_id: game_id.to_string(),
-                versions: Vec::new(),
-            });
+        if !resp.status().is_success() {
+            return Err(CloudError::NetworkError(format!(
+                "device register failed: {}",
+                resp.status()
+            )));
         }
 
-        let content = fs::read_to_string(&manifest_path)
-            .map_err(|e| CloudError::Io(format!("Failed to read manifest: {e}")))?;
+        let parsed: RegisterDeviceResponse = resp
+            .json()
+            .await
+            .map_err(|e| CloudError::Serialization(e.to_string()))?;
 
-        let manifest: GameManifest = serde_json::from_str(&content)
-            .map_err(|e| CloudError::Serialization(format!("Failed to parse manifest: {e}")))?;
+        let mut app_settings = self
+            .settings
+            .get_settings()
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+        app_settings.cloud.device_id = parsed.device_id.clone();
+        self.settings
+            .update_settings(app_settings)
+            .map_err(|e| CloudError::InvalidConfig(format!("settings save failed: {e}")))?;
 
-        Ok(manifest)
-    }
-
-    fn load_auth(&self) -> Result<Option<AuthRecord>, CloudError> {
-        let path = self.auth_path();
-        if !path.exists() {
-            return Ok(None);
-        }
-
-        let content = fs::read_to_string(&path)
-            .map_err(|e| CloudError::Io(format!("Failed to read auth record: {e}")))?;
-
-        let record: AuthRecord = serde_json::from_str(&content)
-            .map_err(|e| CloudError::Serialization(format!("Failed to parse auth record: {e}")))?;
-
-        Ok(Some(record))
-    }
-
-    fn save_auth(&self, record: &AuthRecord) -> Result<(), CloudError> {
-        let path = self.auth_path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| CloudError::Io(format!("Failed to create auth dir: {e}")))?;
-        }
-
-        let content = serde_json::to_string_pretty(record).map_err(|e| {
-            CloudError::Serialization(format!("Failed to serialize auth record: {e}"))
-        })?;
-
-        fs::write(&path, content)
-            .map_err(|e| CloudError::Io(format!("Failed to persist auth record: {e}")))?;
-        Ok(())
-    }
-
-    fn ensure_device_registered(&self) -> Result<(), CloudError> {
-        let mut devices = self.load_devices()?;
-        if !devices
-            .iter()
-            .any(|device| device.device_id == self.device_id)
-        {
-            devices.push(CloudDevice {
-                device_id: self.device_id.clone(),
-                name: "Current Device".to_string(),
-                last_sync: Utc::now().timestamp_millis() as u64,
-            });
-            self.save_devices(&devices)?;
-        }
-        Ok(())
-    }
-
-    fn load_devices(&self) -> Result<Vec<CloudDevice>, CloudError> {
-        let path = self.devices_path();
-        if !path.exists() {
-            return Ok(vec![CloudDevice {
-                device_id: self.device_id.clone(),
-                name: "Current Device".to_string(),
-                last_sync: Utc::now().timestamp_millis() as u64,
-            }]);
-        }
-
-        let content = fs::read_to_string(&path)
-            .map_err(|e| CloudError::Io(format!("Failed to read devices: {e}")))?;
-
-        let devices: Vec<CloudDevice> = serde_json::from_str(&content)
-            .map_err(|e| CloudError::Serialization(format!("Failed to parse devices: {e}")))?;
-
-        Ok(devices)
-    }
-
-    fn save_devices(&self, devices: &[CloudDevice]) -> Result<(), CloudError> {
-        let path = self.devices_path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| CloudError::Io(format!("Failed to create devices dir: {e}")))?;
-        }
-
-        let content = serde_json::to_string_pretty(devices)
-            .map_err(|e| CloudError::Serialization(format!("Failed to serialize devices: {e}")))?;
-
-        fs::write(&path, content)
-            .map_err(|e| CloudError::Io(format!("Failed to write devices: {e}")))?;
-        Ok(())
-    }
-
-    fn validate_token(&self, token: &str) -> Result<(), CloudError> {
-        let Some(record) = self.load_auth()? else {
-            return Err(CloudError::Unauthorized("not logged in".into()));
-        };
-
-        if record.token != token {
-            return Err(CloudError::Unauthorized("invalid token".into()));
-        }
-
-        let now = Utc::now().timestamp_millis() as u64;
-        if now > record.expires_at {
-            return Err(CloudError::Unauthorized("token expired".into()));
-        }
-
-        Ok(())
-    }
-
-    fn save_manifest(&self, manifest: &GameManifest) -> Result<(), CloudError> {
-        let manifest_path = self.manifest_path(&manifest.game_id);
-
-        // Ensure game directory exists
-        if let Some(parent) = manifest_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| CloudError::Io(format!("Failed to create game dir: {e}")))?;
-        }
-
-        let json = serde_json::to_string_pretty(manifest)
-            .map_err(|e| CloudError::Serialization(format!("Failed to serialize manifest: {e}")))?;
-
-        fs::write(&manifest_path, json)
-            .map_err(|e| CloudError::Io(format!("Failed to write manifest: {e}")))?;
-
-        debug!(
-            "[CLOUD] Saved manifest for game_id={} ({} versions)",
-            manifest.game_id,
-            manifest.versions.len()
-        );
-
-        Ok(())
+        Ok(parsed.device_id)
     }
 }
 
 #[async_trait]
-impl CloudBackend for MockCloudBackend {
+impl CloudBackend for HttpCloudBackend {
     async fn login(&self, email: String, password: String) -> Result<String, CloudError> {
-        if email.trim().is_empty() || password.len() < 6 {
-            return Err(CloudError::Unauthorized(
-                "email or password invalid".to_string(),
-            ));
+        let base_url = self.validate_base_url()?;
+        let resp = self
+            .client
+            .post(format!("{}/login", base_url))
+            .json(&serde_json::json!({ "email": email, "password": password }))
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(CloudError::Unauthorized(format!("status {}", resp.status())));
         }
 
-        self.ensure_device_registered()?;
+        let parsed: LoginResponse = resp
+            .json()
+            .await
+            .map_err(|e| CloudError::Serialization(e.to_string()))?;
 
-        let now_ms = Utc::now().timestamp_millis() as u64;
-        let token = Uuid::new_v4().to_string();
-        let record = AuthRecord {
-            email,
-            token: token.clone(),
-            issued_at: now_ms,
-            expires_at: now_ms + 86_400_000,
-        };
+        let mut app_settings = self
+            .settings
+            .get_settings()
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+        app_settings.cloud.enabled = true;
+        app_settings.cloud.api_key = parsed.token.clone();
+        if let Some(device) = parsed.device_id.clone() {
+            app_settings.cloud.device_id = device;
+        }
+        self.settings
+            .update_settings(app_settings)
+            .map_err(|e| CloudError::InvalidConfig(format!("settings save failed: {e}")))?;
 
-        self.save_auth(&record)?;
-        Ok(token)
+        Ok(parsed.token)
     }
 
     async fn upload_archive(
@@ -391,73 +259,62 @@ impl CloudBackend for MockCloudBackend {
         metadata: SaveMetadata,
         archive_path: PathBuf,
     ) -> Result<CloudVersionSummary, CloudError> {
-        info!(
-            "[CLOUD] Uploading archive for game_id={}, version_id={}",
-            metadata.game_id, metadata.version_id
-        );
-
         if !archive_path.exists() {
             return Err(CloudError::NotFound(format!(
-                "Archive not found at {}",
+                "archive not found: {}",
                 archive_path.display()
             )));
         }
 
-        // Get file size
-        let file_metadata = fs::metadata(&archive_path)
-            .map_err(|e| CloudError::Io(format!("Failed to read archive metadata: {e}")))?;
+        let base_url = self.validate_base_url()?;
+        let auth = self.get_auth_header()?;
+        let device_id = self.ensure_device_id()?;
 
-        let size_bytes = file_metadata.len();
+        let archive_size = fs::metadata(&archive_path)
+            .map_err(|e| CloudError::Io(e.to_string()))?
+            .len();
+        let hash = calculate_sha256(&archive_path)?;
 
-        // Create cloud version summary
-        let summary = CloudVersionSummary {
-            game_id: metadata.game_id.clone(),
-            emulator_id: metadata.emulator_id.clone(),
-            version_id: metadata.version_id.clone(),
-            timestamp: metadata.timestamp,
-            size_bytes,
-            hash: metadata.hash.clone(),
-            device_id: self.device_id.clone(),
-            file_list: metadata.file_list.clone(),
-            total_size_bytes: size_bytes,
-        };
+        let mut full_metadata = metadata.clone();
+        full_metadata.hash = hash.clone();
 
-        // Copy archive to mock cloud storage
-        let target_path = self.archive_path(&metadata.game_id, &metadata.version_id);
-        if let Some(parent) = target_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| CloudError::Io(format!("Failed to create target dir: {e}")))?;
+        let manifest = serde_json::json!({
+            "game_id": metadata.game_id,
+            "emulator_id": metadata.emulator_id,
+            "version_id": metadata.version_id,
+            "timestamp": metadata.timestamp,
+            "device_id": device_id,
+            "file_list": metadata.file_list,
+            "hash": hash,
+            "total_size_bytes": archive_size,
+        });
+
+        let archive_file = fs::read(&archive_path).map_err(|e| CloudError::Io(e.to_string()))?;
+        let part = multipart::Part::bytes(archive_file)
+            .file_name(format!("{}.zip", full_metadata.version_id));
+        let form = multipart::Form::new()
+            .text("metadata", manifest.to_string())
+            .part("archive", part);
+
+        let resp = self
+            .client
+            .post(format!("{}/save/upload", base_url))
+            .header("Authorization", auth)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(CloudError::NetworkError(format!("upload failed: {}", resp.status())));
         }
 
-        fs::copy(&archive_path, &target_path)
-            .map_err(|e| CloudError::Io(format!("Failed to copy archive: {e}")))?;
+        let parsed: CloudVersionSummary = resp
+            .json()
+            .await
+            .map_err(|e| CloudError::Serialization(e.to_string()))?;
 
-        debug!("[CLOUD] Copied archive to {}", target_path.display());
-
-        // Update manifest
-        let mut manifest = self.load_manifest(&metadata.game_id)?;
-
-        // Remove existing version with same ID (if any)
-        manifest
-            .versions
-            .retain(|v| v.version_id != summary.version_id);
-
-        // Add new version
-        manifest.versions.push(summary.clone());
-
-        // Sort by timestamp (newest first)
-        manifest
-            .versions
-            .sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-
-        self.save_manifest(&manifest)?;
-
-        info!(
-            "[CLOUD] Successfully uploaded version_id={} ({} bytes)",
-            summary.version_id, summary.size_bytes
-        );
-
-        Ok(summary)
+        Ok(parsed)
     }
 
     async fn list_versions(
@@ -465,24 +322,36 @@ impl CloudBackend for MockCloudBackend {
         game_id: String,
         limit: Option<usize>,
     ) -> Result<Vec<CloudVersionSummary>, CloudError> {
-        debug!("[CLOUD] Listing versions for game_id={}", game_id);
-
-        let manifest = self.load_manifest(&game_id)?;
-
-        let mut versions = manifest.versions;
-
-        // Apply limit if specified
+        let base_url = self.validate_base_url()?;
+        let auth = self.get_auth_header()?;
+        let mut request = self
+            .client
+            .get(format!("{}/save/list", base_url))
+            .header("Authorization", auth)
+            .query(&[("game_id", game_id.clone())]);
         if let Some(limit) = limit {
-            versions.truncate(limit);
+            request = request.query(&[("limit", limit.to_string())]);
         }
 
-        debug!(
-            "[CLOUD] Found {} versions for game_id={}",
-            versions.len(),
-            game_id
-        );
+        let resp = request
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
-        Ok(versions)
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(Vec::new());
+        }
+
+        if !resp.status().is_success() {
+            return Err(CloudError::NetworkError(format!(
+                "list failed: {}",
+                resp.status()
+            )));
+        }
+
+        resp.json()
+            .await
+            .map_err(|e| CloudError::Serialization(e.to_string()))
     }
 
     async fn download_version(
@@ -491,62 +360,146 @@ impl CloudBackend for MockCloudBackend {
         version_id: String,
         target_path: PathBuf,
     ) -> Result<(), CloudError> {
-        info!(
-            "[CLOUD] Downloading version_id={} for game_id={}",
-            version_id, game_id
-        );
+        let base_url = self.validate_base_url()?;
+        let auth = self.get_auth_header()?;
 
-        let source_path = self.archive_path(&game_id, &version_id);
+        if let Some(parent) = target_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| CloudError::Io(e.to_string()))?;
+        }
 
-        if !source_path.exists() {
-            return Err(CloudError::NotFound(format!(
-                "Version {}/{} not found in cloud storage",
-                game_id, version_id
+        let mut resp = self
+            .client
+            .get(format!("{}/save/download", base_url))
+            .header("Authorization", auth)
+            .query(&[("game_id", game_id), ("version_id", version_id)])
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(CloudError::NetworkError(format!(
+                "download failed: {}",
+                resp.status()
             )));
         }
 
-        // Ensure target directory exists
-        if let Some(parent) = target_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| CloudError::Io(format!("Failed to create target dir: {e}")))?;
+        let mut file = tokio::fs::File::create(&target_path)
+            .await
+            .map_err(|e| CloudError::Io(e.to_string()))?;
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?
+        {
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| CloudError::Io(e.to_string()))?;
         }
-
-        fs::copy(&source_path, &target_path)
-            .map_err(|e| CloudError::Io(format!("Failed to download archive: {e}")))?;
-
-        info!("[CLOUD] Downloaded to {}", target_path.display());
 
         Ok(())
     }
 
     fn ensure_device_id(&self) -> Result<String, CloudError> {
-        self.ensure_device_registered()?;
-        Ok(self.device_id.clone())
+        let config = self
+            .settings
+            .get_settings()
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?
+            .cloud;
+        if !config.enabled {
+            return Err(CloudError::NotEnabled);
+        }
+
+        if !config.device_id.trim().is_empty() {
+            return Ok(config.device_id);
+        }
+
+        let token = self.get_auth_header()?;
+        futures::executor::block_on(self.register_device(&token))
     }
 
     async fn list_devices(&self, token: String) -> Result<Vec<CloudDevice>, CloudError> {
-        self.validate_token(&token)?;
-        self.ensure_device_registered()?;
-        let devices = self.load_devices()?;
-        Ok(devices)
+        let base_url = self.validate_base_url()?;
+        let resp = self
+            .client
+            .get(format!("{}/device/list", base_url))
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
+
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(CloudError::Unauthorized("invalid token".into()));
+        }
+
+        if !resp.status().is_success() {
+            return Err(CloudError::NetworkError(format!(
+                "list devices failed: {}",
+                resp.status()
+            )));
+        }
+
+        resp.json()
+            .await
+            .map_err(|e| CloudError::Serialization(e.to_string()))
     }
 
     async fn remove_device(&self, token: String, device_id: String) -> Result<(), CloudError> {
-        self.validate_token(&token)?;
-        let mut devices = self.load_devices()?;
-        devices.retain(|device| device.device_id != device_id);
-        if devices.is_empty() {
-            devices.push(CloudDevice {
-                device_id: self.device_id.clone(),
-                name: "Current Device".to_string(),
-                last_sync: Utc::now().timestamp_millis() as u64,
-            });
+        let base_url = self.validate_base_url()?;
+        let resp = self
+            .client
+            .post(format!("{}/device/remove", base_url))
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&serde_json::json!({"device_id": device_id.clone()}))
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(CloudError::NetworkError(format!(
+                "remove device failed: {}",
+                resp.status()
+            )));
         }
-        self.save_devices(&devices)?;
+
+        let mut app_settings = self
+            .settings
+            .get_settings()
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+        if app_settings.cloud.device_id == device_id {
+            app_settings.cloud.device_id.clear();
+            self.settings
+                .update_settings(app_settings)
+                .map_err(|e| CloudError::InvalidConfig(format!("settings save failed: {e}")))?;
+        }
+
         Ok(())
     }
 
     fn get_device_id(&self) -> Result<String, CloudError> {
-        Ok(self.device_id.clone())
+        let config = self
+            .settings
+            .get_settings()
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?
+            .cloud;
+        if config.device_id.trim().is_empty() {
+            return Err(CloudError::NotFound("device_id not registered".into()));
+        }
+        Ok(config.device_id)
     }
+}
+
+// =============================================================================
+// Utility helpers
+// =============================================================================
+
+pub fn default_device_id() -> String {
+    Uuid::new_v4().to_string()
+}
+
+fn calculate_sha256(path: &PathBuf) -> Result<String, CloudError> {
+    let mut file = fs::File::open(path).map_err(|e| CloudError::Io(e.to_string()))?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher).map_err(|e| CloudError::Io(e.to_string()))?;
+    let result = hasher.finalize();
+    Ok(format!("{:x}", result))
 }
