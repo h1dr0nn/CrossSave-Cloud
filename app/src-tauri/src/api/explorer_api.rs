@@ -27,20 +27,20 @@ pub async fn scan_save_files(
             .get_profile(&emulator_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Profile {} not found", emulator_id))?;
-            
-        (profile.default_save_paths.clone(), profile.file_patterns.clone())
+
+        (
+            profile.default_save_paths.clone(),
+            profile.file_patterns.clone(),
+        )
     };
 
     let emulator_id_clone = emulator_id.clone();
-    
+
     // Offload scanning to a blocking thread to avoid freezing the UI
     let scanned_files = tauri::async_runtime::spawn_blocking(move || {
         let packager = SavePackager::new("explorer".to_string(), emulator_id_clone.clone());
-        
-        let paths: Vec<PathBuf> = default_save_paths
-            .iter()
-            .map(PathBuf::from)
-            .collect();
+
+        let paths: Vec<PathBuf> = default_save_paths.iter().map(PathBuf::from).collect();
 
         let files = packager
             .collect_files(paths, file_patterns)
@@ -71,10 +71,16 @@ pub async fn scan_save_files(
                 });
             }
         }
-        
-        info!("[EXPLORER] Found {} files for {}", scanned_files.len(), emulator_id_clone);
+
+        info!(
+            "[EXPLORER] Found {} files for {}",
+            scanned_files.len(),
+            emulator_id_clone
+        );
         Ok::<Vec<ScannedFile>, String>(scanned_files)
-    }).await.map_err(|e| e.to_string())??;
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
     Ok(scanned_files)
 }
@@ -104,7 +110,7 @@ pub async fn check_path_status(
         let path = PathBuf::from(&path_str);
         let exists = path.exists();
         let is_dir = path.is_dir();
-        
+
         // Try to read dir to check permissions if it exists
         let error = if exists && is_dir {
             match std::fs::read_dir(&path) {
@@ -130,14 +136,14 @@ pub async fn check_path_status(
 pub async fn open_folder(path: String) -> Result<(), String> {
     #[cfg(not(target_os = "android"))]
     use std::process::Command;
-    
+
     let path_buf = PathBuf::from(&path);
-    
+
     // Check if path exists
     if !path_buf.exists() {
         return Err(format!("Path does not exist: {}", path));
     }
-    
+
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
@@ -145,7 +151,7 @@ pub async fn open_folder(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open folder: {}", e))?;
     }
-    
+
     #[cfg(target_os = "windows")]
     {
         Command::new("explorer")
@@ -153,7 +159,7 @@ pub async fn open_folder(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open folder: {}", e))?;
     }
-    
+
     #[cfg(target_os = "linux")]
     {
         Command::new("xdg-open")
@@ -161,7 +167,7 @@ pub async fn open_folder(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open folder: {}", e))?;
     }
-    
+
     #[cfg(target_os = "android")]
     {
         // On Android, we need to use an Intent to open the file manager
@@ -172,7 +178,7 @@ pub async fn open_folder(path: String) -> Result<(), String> {
 
     #[cfg(not(target_os = "android"))]
     info!("[EXPLORER] Opened folder: {}", path);
-    
+
     #[cfg(not(target_os = "android"))]
     Ok(())
 }

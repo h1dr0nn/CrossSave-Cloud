@@ -1,9 +1,11 @@
-use std::sync::Arc;
 use serde::Serialize;
+use std::sync::Arc;
 use tracing::info;
 
 use crate::core::history::HistoryManager;
-use crate::core::settings::{default_retention_bounds, AppSettings, SettingsError, SettingsManager};
+use crate::core::settings::{
+    default_retention_bounds, AppSettings, SettingsError, SettingsManager,
+};
 
 #[derive(Debug, Serialize)]
 pub struct StorageInfo {
@@ -29,7 +31,9 @@ pub async fn update_app_settings(
     history: tauri::State<'_, Arc<HistoryManager>>,
     settings: AppSettings,
 ) -> Result<AppSettings, String> {
-    let updated = state.update_settings(settings).map_err(map_settings_error)?;
+    let updated = state
+        .update_settings(settings)
+        .map_err(map_settings_error)?;
     if let Err(err) = history.set_policy(updated.retention_limit, updated.auto_delete) {
         return Err(err.to_string());
     }
@@ -51,7 +55,9 @@ pub async fn get_storage_info(
 }
 
 #[tauri::command]
-pub async fn clear_history_cache(history: tauri::State<'_, Arc<HistoryManager>>) -> Result<(), String> {
+pub async fn clear_history_cache(
+    history: tauri::State<'_, Arc<HistoryManager>>,
+) -> Result<(), String> {
     history.clear_all().map_err(|err| err.to_string())?;
     info!("[HISTORY] Cleared history cache by request");
     Ok(())
