@@ -576,13 +576,18 @@ async fn validate_self_host_config(
         .get(health_url.clone())
         .header("Authorization", auth_header.clone())
         .send()
-        .await
-        .or_else(|_| {
+        .await;
+
+    let response = match response {
+        Ok(resp) => Ok(resp),
+        Err(_) => {
             client
                 .get(version_url.clone())
                 .header("Authorization", auth_header.clone())
                 .send()
-        });
+                .await
+        }
+    };
 
     let (valid, message) = match response {
         Ok(resp) if resp.status().is_success() => (true, "Self-host servers reachable".to_string()),
@@ -631,14 +636,18 @@ async fn validate_official_config(app: &AppHandle, settings: &CloudSettings) -> 
         .get(health_url.clone())
         .header("Authorization", auth_header.clone())
         .send()
-        .await
-        .or_else(|_| {
+        .await;
+
+    let response = match response {
+        Ok(resp) => Ok(resp),
+        Err(_) => {
             client
                 .get(base.to_string())
                 .header("Authorization", auth_header)
                 .send()
                 .await
-        });
+        }
+    };
 
     let (valid, message) = match response {
         Ok(resp) if resp.status().is_success() => (true, "Official cloud reachable".to_string()),
