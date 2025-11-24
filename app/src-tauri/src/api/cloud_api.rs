@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::core::cloud::{CloudBackend, CloudDevice, CloudError, CloudVersionSummary};
 use crate::core::history::HistoryManager;
 use crate::core::settings::{CloudMode, CloudSettings, SelfHostSettings, SettingsManager};
+use crate::core::sync::SyncManager;
 use crate::{mode_log_tag, switch_cloud_backend};
 
 #[derive(Clone, Debug, Serialize)]
@@ -295,6 +296,7 @@ pub async fn update_cloud_mode(
     app: AppHandle,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings_manager: State<'_, Arc<SettingsManager>>,
+    sync: State<'_, SyncManager>,
 ) -> Result<CloudMode, String> {
     let parsed_mode = parse_cloud_mode(&new_mode)?;
     let tag = mode_log_tag(&parsed_mode);
@@ -307,6 +309,13 @@ pub async fn update_cloud_mode(
     let updated_settings = settings_manager
         .update_settings(app_settings)
         .map_err(|e| format!("Failed to save settings: {e}"))?;
+
+    if parsed_mode == CloudMode::Official {
+        sync.pause();
+        let _ = app.emit("cloud://reconnect-started", "reconnect");
+    } else {
+        sync.resume();
+    }
 
     if let Err(err) = switch_cloud_backend(
         &app,
@@ -321,12 +330,23 @@ pub async fn update_cloud_mode(
     }
 
     let validation_result = match parsed_mode {
-        CloudMode::Official => validate_official_config(&app, &updated_settings.cloud).await,
-        CloudMode::SelfHost => validate_self_host_config(&app, &updated_settings.self_host).await,
-        CloudMode::Off => {
-            emit_validation(&app, CloudMode::Off, true, "Cloud mode disabled".into());
-            Ok(())
+        CloudMode::Official => {
+            let result = validate_official_config(&app, &updated_settings.cloud, false).await;
+            match result {
+                Ok(_) => {
+                    sync.resume();
+                    let _ = app.emit("cloud://online", "online");
+                }
+                Err(ref err) => {
+                    let _ = app.emit("cloud://reconnect-required", err.clone());
+                }
+            }
+            result
         }
+        CloudMode::SelfHost => {
+            validate_self_host_config(&app, &updated_settings.self_host, false).await
+        }
+        CloudMode::Off => Ok(()),
     };
 
     if let Err(err) = validation_result {
@@ -336,6 +356,41 @@ pub async fn update_cloud_mode(
     let _ = app.emit("cloud://mode-changed", &parsed_mode);
     tracing::info!("{tag} Cloud mode changed to {:?}", parsed_mode);
     Ok(parsed_mode)
+}
+
+#[tauri::command]
+pub async fn reconnect_cloud(
+    app: AppHandle,
+    settings_manager: State<'_, Arc<SettingsManager>>,
+    sync: State<'_, SyncManager>,
+) -> Result<(), String> {
+    let app_settings = settings_manager
+        .get_settings()
+        .map_err(|e| format!("Failed to load settings: {e}"))?;
+
+    if app_settings.cloud_mode == CloudMode::Off {
+        return Err(CloudError::Disabled.to_string());
+    }
+
+    if app_settings.cloud_mode != CloudMode::Official {
+        return Err("Reconnect is only available in Official cloud mode".to_string());
+    }
+
+    sync.pause();
+    let _ = app.emit("cloud://reconnect-started", "reconnect");
+
+    let validation_result = validate_official_config(&app, &app_settings.cloud, false).await;
+    match validation_result {
+        Ok(_) => {
+            sync.resume();
+            let _ = app.emit("cloud://online", "online");
+            Ok(())
+        }
+        Err(err) => {
+            let _ = app.emit("cloud://reconnect-required", err.clone());
+            Err(err)
+        }
+    }
 }
 
 /// Checks the status of the cloud connection by performing a HEAD request to `/ping`.
@@ -506,21 +561,40 @@ fn emit_validation(app: &AppHandle, mode: CloudMode, valid: bool, message: Strin
 pub async fn validate_official_cloud_settings(
     new_config: CloudSettings,
     app: AppHandle,
+    settings_manager: State<'_, Arc<SettingsManager>>,
 ) -> Result<(), String> {
-    validate_official_config(&app, &new_config).await
+    let current_settings = settings_manager
+        .get_settings()
+        .map_err(|err| err.to_string())?;
+
+    if current_settings.cloud_mode == CloudMode::Off {
+        return Err(CloudError::Disabled.to_string());
+    }
+
+    validate_official_config(&app, &new_config, true).await
 }
 
 #[tauri::command]
 pub async fn validate_self_host_settings(
     sh: SelfHostSettings,
     app: AppHandle,
+    settings_manager: State<'_, Arc<SettingsManager>>,
 ) -> Result<(), String> {
-    validate_self_host_config(&app, &sh).await
+    let current_settings = settings_manager
+        .get_settings()
+        .map_err(|err| err.to_string())?;
+
+    if current_settings.cloud_mode == CloudMode::Off {
+        return Err(CloudError::Disabled.to_string());
+    }
+
+    validate_self_host_config(&app, &sh, true).await
 }
 
 async fn validate_self_host_config(
     app: &AppHandle,
     settings: &SelfHostSettings,
+    emit_validation_events: bool,
 ) -> Result<(), String> {
     let tag = mode_log_tag(&CloudMode::SelfHost);
     tracing::debug!("{tag} Validating self-hosted cloud settings");
@@ -532,32 +606,42 @@ async fn validate_self_host_config(
 
     if id_server.is_empty() {
         let message = "ID server URL is required for self-host mode".to_string();
-        emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        if emit_validation_events {
+            emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        }
         return Err(message);
     }
 
     if relay_server.is_empty() {
         let message = "Relay server URL is required for self-host mode".to_string();
-        emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        if emit_validation_events {
+            emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        }
         return Err(message);
     }
 
     if api_server.is_empty() {
         let message = "API server URL is required for self-host mode".to_string();
-        emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        if emit_validation_events {
+            emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        }
         return Err(message);
     }
 
     if access_key.is_empty() {
         let message = "Access key is required for self-host mode".to_string();
-        emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        if emit_validation_events {
+            emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        }
         return Err(message);
     }
 
     for url in [id_server, relay_server, api_server] {
         if !(url.starts_with("http://") || url.starts_with("https://")) {
             let message = "All URLs must start with http:// or https://".to_string();
-            emit_validation(app, CloudMode::SelfHost, false, message.clone());
+            if emit_validation_events {
+                emit_validation(app, CloudMode::SelfHost, false, message.clone());
+            }
             return Err(message);
         }
     }
@@ -598,7 +682,9 @@ async fn validate_self_host_config(
         Err(err) => (false, format!("Health check error: {err}")),
     };
 
-    emit_validation(app, CloudMode::SelfHost, valid, message.clone());
+    if emit_validation_events {
+        emit_validation(app, CloudMode::SelfHost, valid, message.clone());
+    }
     if valid {
         Ok(())
     } else {
@@ -606,20 +692,28 @@ async fn validate_self_host_config(
     }
 }
 
-async fn validate_official_config(app: &AppHandle, settings: &CloudSettings) -> Result<(), String> {
+async fn validate_official_config(
+    app: &AppHandle,
+    settings: &CloudSettings,
+    emit_validation_events: bool,
+) -> Result<(), String> {
     let tag = mode_log_tag(&CloudMode::Official);
     tracing::debug!("{tag} Validating official cloud settings");
 
     let base_url = settings.base_url.trim();
     if base_url.is_empty() {
         let message = "Base URL is required for official cloud mode".to_string();
-        emit_validation(app, CloudMode::Official, false, message.clone());
+        if emit_validation_events {
+            emit_validation(app, CloudMode::Official, false, message.clone());
+        }
         return Err(message);
     }
 
     if settings.api_key.trim().is_empty() {
         let message = "API key is required for official cloud mode".to_string();
-        emit_validation(app, CloudMode::Official, false, message.clone());
+        if emit_validation_events {
+            emit_validation(app, CloudMode::Official, false, message.clone());
+        }
         return Err(message);
     }
 
@@ -664,7 +758,9 @@ async fn validate_official_config(app: &AppHandle, settings: &CloudSettings) -> 
         let _ = app.emit("sync://offline", message.clone());
     }
 
-    emit_validation(app, CloudMode::Official, valid, message.clone());
+    if emit_validation_events {
+        emit_validation(app, CloudMode::Official, valid, message.clone());
+    }
     if valid {
         Ok(())
     } else {

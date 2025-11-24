@@ -345,6 +345,7 @@ pub struct SyncManager {
     pub history: Arc<HistoryManager>,
     pub settings: Arc<SettingsManager>,
     online: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     app_handle: AppHandle,
     sync_trigger: Arc<Notify>,
     running: Arc<AtomicBool>,
@@ -358,6 +359,7 @@ impl SyncManager {
         settings: Arc<SettingsManager>,
     ) -> Self {
         let online = Arc::new(AtomicBool::new(true));
+        let paused = Arc::new(AtomicBool::new(false));
         let queue = Arc::new(UploadQueue::new(app_handle.clone(), online.clone()));
 
         Self {
@@ -366,6 +368,7 @@ impl SyncManager {
             history,
             settings,
             online,
+            paused,
             app_handle,
             sync_trigger: Arc::new(Notify::new()),
             running: Arc::new(AtomicBool::new(false)),
@@ -417,6 +420,7 @@ impl SyncManager {
         let sync_trigger = self.sync_trigger.clone();
         let running_flag = self.running.clone();
         let online_status = self.online.clone();
+        let paused_flag = self.paused.clone();
 
         tokio::spawn(async move {
             if running_flag.swap(true, Ordering::SeqCst) {
@@ -439,6 +443,11 @@ impl SyncManager {
                     .map(|s| s.cloud.enabled)
                     .unwrap_or(false);
                 if !enabled {
+                    continue;
+                }
+
+                if paused_flag.load(Ordering::SeqCst) {
+                    info!("[SYNC] Sync paused; skipping cycle");
                     continue;
                 }
 
@@ -568,10 +577,28 @@ impl Clone for SyncManager {
             history: self.history.clone(),
             settings: self.settings.clone(),
             online: self.online.clone(),
+            paused: self.paused.clone(),
             app_handle: self.app_handle.clone(),
             sync_trigger: self.sync_trigger.clone(),
             running: self.running.clone(),
         }
+    }
+}
+
+impl SyncManager {
+    pub fn pause(&self) {
+        self.paused.store(true, Ordering::SeqCst);
+    }
+
+    pub fn resume(&self) {
+        let was_paused = self.paused.swap(false, Ordering::SeqCst);
+        if was_paused {
+            self.sync_trigger.notify_one();
+        }
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::SeqCst)
     }
 }
 
