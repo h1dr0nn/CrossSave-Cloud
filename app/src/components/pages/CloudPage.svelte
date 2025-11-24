@@ -123,7 +123,7 @@
     try {
       const path = await cloudStore.downloadCloudVersion(
         selectedGame,
-        versionId
+        versionId,
       );
       alert(`Downloaded to: ${path}`);
     } catch (error) {
@@ -144,7 +144,7 @@
   }
 </script>
 
-<section class="cloud-page">
+<section class="settings-page">
   <div class="content-surface">
     <main class="content-body">
       <div class="header-wrapper">
@@ -157,204 +157,261 @@
         />
       </div>
 
-      {#if !$isLoggedIn}
-        <!-- Login Form -->
-        <div class="card login-card">
-          <h2>Sign In</h2>
-          <p class="subtitle">Connect to CrossSave Cloud to sync your saves</p>
-
-          <form on:submit|preventDefault={handleLogin}>
-            <div class="input-stack">
-              <div class="form-group">
-                <label for="email">Email</label>
-                <input
-                  id="email"
-                  type="email"
-                  bind:value={email}
-                  placeholder="your@email.com"
-                  required
-                />
-              </div>
-
-              <div class="form-group">
-                <label for="password">Password</label>
-                <input
-                  id="password"
-                  type="password"
-                  bind:value={password}
-                  placeholder="••••••••"
-                  required
-                />
-              </div>
+      <div class="settings-container">
+        {#if !$isLoggedIn}
+          <!-- Login Form -->
+          <div class="section-group">
+            <div class="section-header">
+              <p class="section-title">Sign In</p>
             </div>
+            <div class="settings-card">
+              <div class="card-content">
+                <p class="description">
+                  Connect to CrossSave Cloud to sync your saves
+                </p>
 
-            {#if loginError}
-              <p class="error">{loginError}</p>
-            {/if}
+                <form on:submit|preventDefault={handleLogin}>
+                  <div class="input-stack">
+                    <div class="form-group">
+                      <label for="email">Email</label>
+                      <input
+                        id="email"
+                        type="email"
+                        bind:value={email}
+                        placeholder="your@email.com"
+                        required
+                      />
+                    </div>
 
-            <div class="form-actions">
-              <button type="submit" class="btn-primary btn-large">
-                Sign In
-              </button>
-            </div>
-          </form>
-
-          <p class="note">
-            <strong>Note:</strong> This is a mock login for development. Any email/password
-            will work.
-          </p>
-        </div>
-      {:else}
-        <!-- Logged In View -->
-        <div class="logged-in-header">
-          <div class="user-info">
-            <span class="email">{$userEmail}</span>
-            <button class="btn-secondary btn-small" on:click={handleLogout}>
-              Logout
-            </button>
-          </div>
-        </div>
-
-        <!-- Device Management -->
-        <div class="card">
-          <h2>Device Management</h2>
-
-          <div class="device-info">
-            <div class="info-row">
-              <span class="label">Current Device ID:</span>
-              <code class="device-id">{deviceId}</code>
-            </div>
-          </div>
-
-          <div class="devices-list">
-            <h3>Registered Devices</h3>
-            {#each mockDevices as device}
-              <div class="device-item">
-                <div class="device-details">
-                  <strong>{device.name}</strong>
-                  <span class="device-meta"
-                    >Last sync: {new Date(
-                      device.last_sync
-                    ).toLocaleString()}</span
-                  >
-                </div>
-                <div class="device-actions">
-                  <button class="btn-secondary btn-small">Rename</button>
-                  <button class="btn-danger btn-small">Remove</button>
-                </div>
-              </div>
-            {/each}
-          </div>
-        </div>
-
-        <!-- Manual Sync Controls -->
-        <div class="card">
-          <h2>Sync Controls</h2>
-
-          <div class="sync-status">
-            {#if syncStatus}
-              <div class="status-grid">
-                <div class="status-item">
-                  <span class="label">Queue Length:</span>
-                  <span class="value">{syncStatus.queue_length}</span>
-                </div>
-                <div class="status-item">
-                  <span class="label">Status:</span>
-                  <span class="value {$isSyncing ? 'syncing' : 'idle'}">
-                    {$isSyncing ? "Syncing..." : "Idle"}
-                  </span>
-                </div>
-                {#if syncStatus.last_sync}
-                  <div class="status-item">
-                    <span class="label">Last Sync:</span>
-                    <span class="value"
-                      >{new Date(syncStatus.last_sync).toLocaleString()}</span
-                    >
+                    <div class="form-group">
+                      <label for="password">Password</label>
+                      <input
+                        id="password"
+                        type="password"
+                        bind:value={password}
+                        placeholder="••••••••"
+                        required
+                      />
+                    </div>
                   </div>
+
+                  {#if loginError}
+                    <p class="error">{loginError}</p>
+                  {/if}
+
+                  <div class="form-actions">
+                    <button type="submit" class="btn-primary btn-full">
+                      Sign In
+                    </button>
+                  </div>
+                </form>
+
+                <p class="note">
+                  <strong>Note:</strong> This is a mock login for development. Any
+                  email/password will work.
+                </p>
+              </div>
+            </div>
+          </div>
+        {:else}
+          <!-- Account Info -->
+          <div class="section-group">
+            <div class="section-header">
+              <p class="section-title">Account</p>
+            </div>
+            <div class="settings-card">
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-icon cloud">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M18 10h-1.26A8 8 0 1 0 9 17h9a5 5 0 0 0 0-10z"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </div>
+                  <div class="setting-content">
+                    <p class="setting-label">Logged in as</p>
+                    <p class="setting-value">{$userEmail}</p>
+                  </div>
+                </div>
+                <button class="btn-secondary btn-small" on:click={handleLogout}>
+                  Logout
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sync Status -->
+          <div class="section-group">
+            <div class="section-header">
+              <p class="section-title">Sync Status</p>
+            </div>
+            <div class="settings-card">
+              <div class="card-content">
+                {#if syncStatus}
+                  <div class="status-grid">
+                    <div class="status-item">
+                      <span class="label">Queue</span>
+                      <span class="value">{syncStatus.queue_length}</span>
+                    </div>
+                    <div class="status-item">
+                      <span class="label">Status</span>
+                      <span class="value {$isSyncing ? 'syncing' : 'idle'}">
+                        {$isSyncing ? "Syncing..." : "Idle"}
+                      </span>
+                    </div>
+                  </div>
+                  {#if syncStatus.last_sync}
+                    <p class="last-sync">
+                      Last synced: {new Date(
+                        syncStatus.last_sync,
+                      ).toLocaleString()}
+                    </p>
+                  {/if}
                 {/if}
+
+                {#if syncMessage}
+                  <p class="sync-message">{syncMessage}</p>
+                {/if}
+
+                <div class="actions-row">
+                  <button
+                    class="btn-primary"
+                    on:click={handleSyncNow}
+                    disabled={$isSyncing}
+                  >
+                    {$isSyncing ? "Syncing..." : "Sync Now"}
+                  </button>
+
+                  <button
+                    class="btn-secondary"
+                    on:click={handleClearQueue}
+                    disabled={!syncStatus || syncStatus.queue_length === 0}
+                  >
+                    Clear Queue
+                  </button>
+                </div>
               </div>
-            {/if}
-
-            {#if syncMessage}
-              <p class="sync-message">{syncMessage}</p>
-            {/if}
+            </div>
           </div>
 
-          <div class="sync-actions">
-            <button
-              class="btn-primary btn-large"
-              on:click={handleSyncNow}
-              disabled={$isSyncing}
-            >
-              {$isSyncing ? "Syncing..." : "Sync Now"}
-            </button>
+          <!-- Device Management -->
+          <div class="section-group">
+            <div class="section-header">
+              <p class="section-title">Devices</p>
+            </div>
+            <div class="settings-card">
+              <div class="card-content">
+                <div class="device-info">
+                  <span class="label">Current Device ID</span>
+                  <code class="device-id">{deviceId}</code>
+                </div>
 
-            <button
-              class="btn-secondary"
-              on:click={handleClearQueue}
-              disabled={!syncStatus || syncStatus.queue_length === 0}
-            >
-              Clear Queue
-            </button>
-          </div>
-        </div>
+                <div class="divider"></div>
 
-        <!-- Cloud Version History -->
-        <div class="card">
-          <h2>Cloud Version History</h2>
-
-          <div class="form-group">
-            <label for="game-select">Select Game:</label>
-            <input
-              id="game-select"
-              type="text"
-              bind:value={selectedGame}
-              placeholder="Enter game ID"
-              on:blur={loadCloudVersions}
-            />
-          </div>
-
-          {#if loadingVersions}
-            <p class="loading">Loading versions...</p>
-          {:else if selectedVersions.length > 0}
-            <div class="versions-list">
-              {#each selectedVersions as version}
-                <div class="version-item">
-                  <div class="version-info">
-                    <div class="version-header">
-                      <strong>{version.version_id.substring(0, 8)}...</strong>
-                      <span class="version-date"
-                        >{formatDate(version.timestamp)}</span
-                      >
+                <p class="subsection-title">Registered Devices</p>
+                <div class="devices-list">
+                  {#each mockDevices as device}
+                    <div class="device-item">
+                      <div class="device-details">
+                        <strong>{device.name}</strong>
+                        <span class="device-meta"
+                          >Last sync: {new Date(
+                            device.last_sync,
+                          ).toLocaleString()}</span
+                        >
+                      </div>
+                      <div class="device-actions">
+                        <button class="btn-secondary btn-small">Rename</button>
+                        <button class="btn-danger btn-small">Remove</button>
+                      </div>
                     </div>
-                    <div class="version-meta">
-                      <span>Size: {formatBytes(version.size_bytes)}</span>
-                      <span>Device: {version.device_id.substring(0, 8)}...</span
-                      >
-                    </div>
-                  </div>
-                  <div class="version-actions">
+                  {/each}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cloud Version History -->
+          <div class="section-group">
+            <div class="section-header">
+              <p class="section-title">Version History</p>
+            </div>
+            <div class="settings-card">
+              <div class="card-content">
+                <div class="form-group search-group">
+                  <label for="game-select">Search Game ID</label>
+                  <div class="search-input">
+                    <input
+                      id="game-select"
+                      type="text"
+                      bind:value={selectedGame}
+                      placeholder="Enter game ID..."
+                      on:blur={loadCloudVersions}
+                    />
                     <button
-                      class="btn-secondary btn-small"
-                      on:click={() => handleDownload(version.version_id)}
+                      class="btn-secondary"
+                      on:click={loadCloudVersions}
+                      disabled={!selectedGame || loadingVersions}
                     >
-                      Download
+                      Search
                     </button>
                   </div>
                 </div>
-              {/each}
+
+                {#if loadingVersions}
+                  <p class="loading">Loading versions...</p>
+                {:else if selectedVersions.length > 0}
+                  <div class="versions-list">
+                    {#each selectedVersions as version}
+                      <div class="version-item">
+                        <div class="version-info">
+                          <div class="version-header">
+                            <strong
+                              >{version.version_id.substring(0, 8)}...</strong
+                            >
+                            <span class="version-date"
+                              >{formatDate(version.timestamp)}</span
+                            >
+                          </div>
+                          <div class="version-meta">
+                            <span>{formatBytes(version.size_bytes)}</span>
+                            <span class="separator">•</span>
+                            <span
+                              >Device: {version.device_id.substring(
+                                0,
+                                8,
+                              )}...</span
+                            >
+                          </div>
+                        </div>
+                        <button
+                          class="btn-secondary btn-small"
+                          on:click={() => handleDownload(version.version_id)}
+                        >
+                          Download
+                        </button>
+                      </div>
+                    {/each}
+                  </div>
+                {:else if selectedGame}
+                  <p class="empty">No cloud versions found for this game</p>
+                {/if}
+              </div>
             </div>
-          {:else if selectedGame}
-            <p class="empty">No cloud versions found for this game</p>
-          {/if}
-        </div>
-      {/if}
+          </div>
+        {/if}
+      </div>
     </main>
   </div>
 </section>
 
 <style>
-  .cloud-page {
+  .settings-page {
     display: grid;
     grid-template-columns: 1fr;
     min-height: 100vh;
@@ -387,37 +444,50 @@
     margin-bottom: clamp(16px, 3vw, 32px);
   }
 
-  h2 {
-    margin: 0 0 1rem 0;
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--text-primary);
+  .settings-container {
+    width: 100%;
+    display: grid;
+    gap: 32px;
+    align-content: start;
   }
 
-  h3 {
-    margin: 1.5rem 0 1rem 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--text-primary);
+  .section-group {
+    display: grid;
+    gap: 8px;
   }
 
-  .card {
+  .section-header {
+    padding: 0 16px;
+  }
+
+  .section-title {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  .settings-card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 24px;
-    margin-bottom: 24px;
-    box-shadow: var(--shadow-soft);
     overflow: hidden;
-    display: grid;
-    gap: 16px;
+    box-shadow: var(--shadow-soft);
   }
 
-  .subtitle {
+  .card-content {
+    padding: 24px;
+  }
+
+  .description {
     color: var(--text-secondary);
-    margin-bottom: 2rem;
+    margin-bottom: 24px;
+    font-size: 0.95rem;
   }
 
+  /* Form Styles */
   .input-stack {
     display: grid;
     gap: 12px;
@@ -425,91 +495,84 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: color-mix(in srgb, var(--surface-muted) 70%, transparent);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface) 40%, transparent);
+    box-shadow: inset 0 1px 0
+      color-mix(in srgb, var(--surface) 40%, transparent);
+    margin-bottom: 24px;
   }
 
   .form-group {
     display: grid;
     gap: 8px;
-    padding: 12px 14px;
-    background: color-mix(in srgb, var(--surface) 85%, transparent);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
   }
 
   .input-stack .form-group {
-    border: 0;
     padding: 0;
-    background: transparent;
   }
 
   label {
     display: block;
-    margin-bottom: 0.5rem;
     font-weight: 500;
     color: var(--text-primary);
-  }
-
-  .form-actions {
-    margin-top: 12px;
-    display: flex;
-    justify-content: center;
-    width: 100%;
+    font-size: 0.9rem;
   }
 
   input[type="email"],
   input[type="password"],
   input[type="text"] {
     width: 100%;
-    padding: 0.75rem 1rem;
+    padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--surface-muted) 85%, transparent);
+    background: var(--bg-secondary);
     color: var(--text-primary);
-    font-size: 1rem;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease,
-      background-color 0.2s ease;
+    font-size: 0.95rem;
+    transition: all 0.2s;
   }
 
   input:focus {
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 22%, transparent);
+    box-shadow: 0 0 0 2px
+      color-mix(in srgb, var(--accent-color) 20%, transparent);
     background: var(--surface);
   }
 
+  .form-actions {
+    margin-top: 12px;
+  }
+
+  /* Buttons */
   .btn-primary,
   .btn-secondary,
   .btn-danger {
-    padding: 0.75rem 1.5rem;
+    padding: 0.6rem 1.2rem;
     border: none;
     border-radius: 8px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
+    font-size: 0.95rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .btn-large {
-    width: min(100%);
-    padding: 12px;
-    font-size: 1rem;
+  .btn-full {
+    width: 100%;
   }
 
   .btn-small {
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
   }
 
   .btn-primary {
     background: var(--accent);
     color: #fff;
-    border: 1px solid color-mix(in srgb, var(--accent) 88%, transparent);
-    box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 26%, transparent);
   }
 
   .btn-primary:hover:not(:disabled) {
     background: var(--accent-strong);
-    border-color: color-mix(in srgb, var(--accent-strong) 94%, transparent);
   }
 
   .btn-secondary {
@@ -523,12 +586,14 @@
   }
 
   .btn-danger {
-    background: var(--danger);
-    color: white;
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+    color: var(--danger);
+    border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
   }
 
   .btn-danger:hover {
-    background: var(--danger-dark);
+    background: var(--danger);
+    color: white;
   }
 
   .btn-primary:disabled,
@@ -537,71 +602,148 @@
     cursor: not-allowed;
   }
 
-  .error {
-    color: #ef4444;
-    margin: 1rem 0;
-  }
-
-  .note {
-    margin-top: 1.5rem;
-    padding: 1rem;
-    background: var(--bg-secondary);
-    border-radius: 8px;
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-  }
-
-  .logged-in-header {
-    margin-bottom: 2rem;
-  }
-
-  .user-info {
+  /* Account Row */
+  .setting-row {
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    align-items: center;
-    padding: 1rem;
-    background: var(--surface-muted);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
+    padding: 16px 24px;
+    gap: 12px;
   }
 
-  .email {
-    font-weight: 500;
-    color: var(--text-primary);
-  }
-
-  .device-info {
-    margin-bottom: 2rem;
-  }
-
-  .info-row {
+  .setting-info {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.75rem;
-    background: var(--surface-muted);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
+    gap: 16px;
+    flex: 1;
   }
 
-  .label {
+  .setting-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+
+  .setting-icon svg {
+    width: 20px;
+    height: 20px;
+    color: white;
+  }
+
+  .setting-icon.cloud {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+  }
+
+  .setting-content {
+    flex: 1;
+  }
+
+  .setting-label {
+    margin: 0;
     font-weight: 500;
+    color: var(--text);
+  }
+
+  .setting-value {
+    margin: 2px 0 0 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  /* Sync Status */
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .status-item {
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .status-item .label {
+    font-size: 0.8rem;
     color: var(--text-secondary);
+  }
+
+  .status-item .value {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 1rem;
+  }
+
+  .value.syncing {
+    color: var(--accent-color);
+  }
+
+  .last-sync {
+    margin: 0px 0 24px 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-align: left;
+  }
+
+  .sync-message {
+    padding: 12px;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent-strong);
+    border-radius: 8px;
+    text-align: center;
+    margin-bottom: 24px;
+    font-size: 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+
+  .actions-row {
+    display: flex;
+    gap: 12px;
+  }
+
+  /* Devices */
+  .device-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 24px;
   }
 
   .device-id {
-    flex: 1;
-    padding: 0.5rem;
-    background: var(--bg-primary);
+    padding: 6px 10px;
+    background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: 6px;
     font-family: "SF Mono", "Monaco", monospace;
     font-size: 0.85rem;
     color: var(--text-primary);
   }
 
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 24px 0;
+  }
+
+  .subsection-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 16px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
   .devices-list {
-    margin-top: 1.5rem;
     display: grid;
     gap: 12px;
   }
@@ -610,16 +752,16 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem;
-    background: var(--surface-muted);
+    padding: 12px 16px;
+    background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: 8px;
   }
 
   .device-details {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 2px;
   }
 
   .device-meta {
@@ -629,90 +771,31 @@
 
   .device-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 8px;
   }
 
-  .sync-status {
-    margin-bottom: 1.5rem;
+  /* Versions */
+  .search-group {
+    margin-bottom: 24px;
   }
 
-  .status-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1rem;
-    background: color-mix(in srgb, var(--surface-muted) 60%, transparent);
-    padding: 12px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-  }
-
-  .status-item {
-    padding: 1rem;
-    background: var(--surface);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
+  .search-input {
     display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .value {
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .value.syncing {
-    color: var(--accent-color);
-  }
-
-  .value.idle {
-    color: var(--text-secondary);
-  }
-
-  .sync-message {
-    padding: 0.75rem;
-    background: var(--accent-color);
-    color: white;
-    border-radius: 8px;
-    text-align: center;
-  }
-
-  .sync-actions {
-    display: flex;
-    gap: 1rem;
-  }
-
-  .sync-actions .btn-large {
-    width: 100%;
-    flex: 2;
-  }
-
-  .sync-actions .btn-secondary {
-    flex: 1;
-  }
-
-  .loading,
-  .empty {
-    text-align: center;
-    padding: 2rem;
-    color: var(--text-secondary);
-    font-style: italic;
+    gap: 8px;
   }
 
   .versions-list {
-    margin-top: 1rem;
     display: grid;
-    gap: 12px;
+    gap: 8px;
   }
 
   .version-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem;
-    background: var(--surface-muted);
-    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
     border: 1px solid var(--border);
   }
 
@@ -722,46 +805,75 @@
 
   .version-header {
     display: flex;
-    justify-content: space-between;
-    margin-bottom: 0.5rem;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 4px;
   }
 
   .version-date {
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
   }
 
   .version-meta {
     display: flex;
-    gap: 1.5rem;
+    align-items: center;
+    gap: 8px;
     font-size: 0.85rem;
     color: var(--text-secondary);
   }
 
+  .separator {
+    color: var(--border);
+  }
+
+  .error {
+    color: var(--danger);
+    margin: 12px 0;
+    font-size: 0.9rem;
+  }
+
+  .note {
+    margin-top: 24px;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+
+  .loading,
+  .empty {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-secondary);
+    font-style: italic;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px dashed var(--border);
+  }
+
   @media (max-width: 640px) {
-    .card {
-      padding: 1.5rem;
+    .settings-container {
+      gap: 24px;
     }
 
-    .sync-actions {
-      flex-direction: column;
+    .setting-row {
+      padding: 16px;
     }
 
     .device-item,
     .version-item {
       flex-direction: column;
       align-items: flex-start;
-      gap: 1rem;
+      gap: 12px;
     }
 
     .device-actions,
     .version-actions {
       width: 100%;
-    }
-
-    .device-actions button,
-    .version-actions button {
-      flex: 1;
+      justify-content: flex-end;
     }
   }
 </style>

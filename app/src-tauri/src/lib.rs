@@ -31,11 +31,28 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[tauri::command]
+async fn select_directory(app_handle: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::{DialogExt, FilePath};
+    
+    let result = app_handle
+        .dialog()
+        .file()
+        .blocking_pick_folder();
+    
+    match result {
+        Some(FilePath::Path(path)) => Ok(Some(path.to_string_lossy().to_string())),
+        Some(FilePath::Url(url)) => Ok(Some(url.to_string())),
+        None => Ok(None),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing::info!("[STARTUP] Rust backend starting...");
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             tracing::info!("[STARTUP] Tauri setup hook running...");
             // Get app data directory (works on all platforms including Android)
@@ -126,6 +143,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            select_directory,
             start_watcher,
             stop_watcher,
             list_profiles,

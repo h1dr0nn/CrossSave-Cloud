@@ -153,7 +153,7 @@
                   </svg>
                 </div>
                 <div class="setting-content">
-                  <p class="setting-label">Backup & Retention</p>
+                  <p class="setting-label">Backup</p>
                 </div>
               </div>
               <svg class="chevron" viewBox="0 0 24 24" fill="none">
@@ -408,6 +408,7 @@
     height: 1px;
     background: var(--border);
     margin: 0 16px;
+    opacity: 0.6;
   }
 
   @media (max-width: 640px) {

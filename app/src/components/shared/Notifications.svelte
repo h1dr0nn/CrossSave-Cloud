@@ -12,6 +12,7 @@
       class="toast"
       class:error={item.level === "error"}
       class:info={item.level === "info"}
+      class:success={item.level === "success"}
       animate:flip={{ duration: 300 }}
       in:fly={{ y: 20, duration: 300 }}
       out:fade={{ duration: 200 }}
@@ -31,6 +32,19 @@
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+        {:else if item.level === "success"}
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="icon"
+          >
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
           </svg>
         {:else}
           <svg
@@ -105,6 +119,15 @@
 
   .toast.error .icon {
     color: #ef4444;
+  }
+
+  .toast.success {
+    background: color-mix(in srgb, #22c55e 10%, var(--surface));
+    border-color: color-mix(in srgb, #22c55e 30%, var(--border));
+  }
+
+  .toast.success .icon {
+    color: #22c55e;
   }
 
   .toast.info {
