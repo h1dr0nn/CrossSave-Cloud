@@ -1,4 +1,4 @@
-import { derived, writable } from 'svelte/store';
+import { derived, get, writable } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
@@ -32,6 +32,26 @@ export interface CloudDevice {
     device_id: string;
     name: string;
     last_sync: number;
+}
+
+export type CloudMode = 'official' | 'self_host' | 'off';
+export type CloudAuthMode = 'NONE' | 'ACCESS_KEY' | 'USERPASS';
+
+export interface CloudConfig {
+    mode?: CloudMode;
+    base_url?: string;
+    api_key?: string;
+    access_key?: string;
+    auth_mode?: CloudAuthMode;
+    enabled?: boolean;
+    timeout_seconds?: number;
+    device_id?: string;
+    [key: string]: unknown;
+}
+
+export interface CloudValidationResult {
+    status: 'idle' | 'valid' | 'invalid';
+    message: string;
 }
 
 interface LoginResult {
@@ -73,6 +93,9 @@ const downloadState = writable<DownloadState>({
 });
 const onlineStatus = writable<'online' | 'offline'>('online');
 const devices = writable<CloudDevice[]>([]);
+const cloudMode = writable<CloudMode>('off');
+const cloudConfig = writable<CloudConfig | null>(null);
+const validationResult = writable<CloudValidationResult>({ status: 'idle', message: '' });
 
 const listeners: Promise<UnlistenFn>[] = [];
 
@@ -118,7 +141,20 @@ function bindEvents() {
             });
         }),
         listen('sync://online', () => onlineStatus.set('online')),
-        listen('sync://offline', () => onlineStatus.set('offline'))
+        listen('sync://offline', () => onlineStatus.set('offline')),
+        listen<{ mode: CloudMode; config?: CloudConfig }>('cloud://mode-changed', (event) => {
+            cloudMode.set(event.payload.mode);
+            if (event.payload.config) {
+                cloudConfig.set(event.payload.config);
+            }
+        }),
+        listen<{ config: CloudConfig }>('cloud://backend-switched', (event) => {
+            const config = event.payload.config;
+            cloudConfig.set(config);
+            if (config?.mode) {
+                cloudMode.set(config.mode);
+            }
+        })
     );
 }
 
@@ -139,11 +175,18 @@ export const cloudStore = {
     downloadState: { subscribe: downloadState.subscribe },
     onlineStatus: { subscribe: onlineStatus.subscribe },
     devices: { subscribe: devices.subscribe },
+    cloudMode: { subscribe: cloudMode.subscribe },
+    cloudConfig: { subscribe: cloudConfig.subscribe },
+    validation: { subscribe: validationResult.subscribe },
 
     async initialize(): Promise<void> {
         bindEvents();
         try {
-            const config = await invoke<any>('get_cloud_config');
+            const config = await invoke<CloudConfig>('get_cloud_config');
+            cloudConfig.set(config);
+            if (config?.mode) {
+                cloudMode.set(config.mode);
+            }
             if (config?.enabled && config?.api_key) {
                 authState.set({
                     isLoggedIn: true,
@@ -264,12 +307,83 @@ export const cloudStore = {
         });
     },
 
-    async getCloudConfig(): Promise<any> {
-        return await invoke('get_cloud_config');
+    async getCloudConfig(): Promise<CloudConfig | null> {
+        const config = await invoke<CloudConfig>('get_cloud_config');
+        cloudConfig.set(config);
+        if (config?.mode) {
+            cloudMode.set(config.mode);
+        }
+        return config;
     },
 
-    async updateCloudConfig(config: any): Promise<any> {
-        return await invoke('update_cloud_config', { newConfig: config });
+    async updateCloudConfig(config: CloudConfig): Promise<CloudConfig> {
+        const updated = await invoke<CloudConfig>('update_cloud_config', { newConfig: config });
+        cloudConfig.set(updated ?? config);
+        return updated ?? config;
+    },
+
+    async updateCloudMode(mode: CloudMode): Promise<void> {
+        bindEvents();
+        await invoke('update_cloud_mode', { newMode: mode });
+        cloudMode.set(mode);
+    },
+
+    async updateCloudSettings(partialConfig: Partial<CloudConfig>): Promise<CloudConfig> {
+        bindEvents();
+        const current = get(cloudConfig) ?? { mode: get(cloudMode) };
+        const merged = { ...current, ...partialConfig, mode: partialConfig.mode ?? current.mode ?? get(cloudMode) };
+        cloudConfig.set(merged);
+        return await this.updateCloudConfig(merged);
+    },
+
+    async validateSelfHostSettings(config?: CloudConfig): Promise<CloudValidationResult> {
+        bindEvents();
+        const payload = config ?? get(cloudConfig);
+        const defaultResult: CloudValidationResult = { status: 'invalid', message: 'Missing configuration' };
+        if (!payload) {
+            validationResult.set(defaultResult);
+            return defaultResult;
+        }
+
+        try {
+            const result = await invoke<{ valid: boolean; message?: string }>('validate_self_host_settings', { config: payload });
+            const validation: CloudValidationResult = {
+                status: result?.valid ? 'valid' : 'invalid',
+                message: result?.message ?? (result?.valid ? 'Settings are valid' : 'Validation failed')
+            };
+            validationResult.set(validation);
+            return validation;
+        } catch (error: unknown) {
+            const message = typeof error === 'string' ? error : (error as Error)?.message ?? 'Validation failed';
+            const validation: CloudValidationResult = { status: 'invalid', message };
+            validationResult.set(validation);
+            return validation;
+        }
+    },
+
+    async validateOfficialCloudSettings(config?: CloudConfig): Promise<CloudValidationResult> {
+        bindEvents();
+        const payload = config ?? get(cloudConfig);
+        const defaultResult: CloudValidationResult = { status: 'invalid', message: 'Missing configuration' };
+        if (!payload) {
+            validationResult.set(defaultResult);
+            return defaultResult;
+        }
+
+        try {
+            const result = await invoke<{ valid: boolean; message?: string }>('validate_official_cloud_settings', { config: payload });
+            const validation: CloudValidationResult = {
+                status: result?.valid ? 'valid' : 'invalid',
+                message: result?.message ?? (result?.valid ? 'Settings are valid' : 'Validation failed')
+            };
+            validationResult.set(validation);
+            return validation;
+        } catch (error: unknown) {
+            const message = typeof error === 'string' ? error : (error as Error)?.message ?? 'Validation failed';
+            const validation: CloudValidationResult = { status: 'invalid', message };
+            validationResult.set(validation);
+            return validation;
+        }
     },
 
     async getCloudStatus(): Promise<any> {
