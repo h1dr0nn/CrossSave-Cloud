@@ -5,11 +5,12 @@ use tokio::sync::Mutex;
 
 use reqwest::Client;
 use serde::Serialize;
-use tauri::{Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::core::cloud::{CloudBackend, CloudDevice, CloudError, CloudVersionSummary};
 use crate::core::history::HistoryManager;
 use crate::core::settings::{CloudMode, CloudSettings, SettingsManager};
+use crate::{mode_log_tag, switch_cloud_backend};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CloudStatus {
@@ -22,6 +23,12 @@ pub struct CloudStatus {
 pub struct LoginResult {
     pub token: String,
     pub device_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct CloudValidationPayload {
+    mode: String,
+    message: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -274,6 +281,46 @@ pub async fn update_cloud_config(
         .map_err(|e| format!("Failed to save settings: {e}"))
 }
 
+#[tauri::command]
+pub async fn update_cloud_mode(
+    new_mode: String,
+    app: AppHandle,
+    cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    settings_manager: State<'_, Arc<SettingsManager>>,
+) -> Result<CloudMode, String> {
+    let parsed_mode = parse_cloud_mode(&new_mode)?;
+    let tag = mode_log_tag(&parsed_mode);
+    tracing::info!("{tag} Requested cloud mode update to {:?}", parsed_mode);
+
+    let mut app_settings = settings_manager
+        .get_settings()
+        .map_err(|e| format!("Failed to load settings: {e}"))?;
+    app_settings.cloud_mode = parsed_mode.clone();
+    let updated_settings = settings_manager
+        .update_settings(app_settings)
+        .map_err(|e| format!("Failed to save settings: {e}"))?;
+
+    if let Err(err) = switch_cloud_backend(
+        &app,
+        &cloud,
+        (*settings_manager).clone(),
+        parsed_mode.clone(),
+        updated_settings.clone(),
+    ) {
+        return Err(cloud_error_to_string(err));
+    }
+
+    match parsed_mode {
+        CloudMode::Official => validate_official_cloud_settings(&app, &updated_settings.cloud)?,
+        CloudMode::SelfHost => validate_self_host_settings(&app, &updated_settings.cloud)?,
+        CloudMode::Off => emit_validation(&app, CloudMode::Off, true, "Cloud mode disabled".into()),
+    };
+
+    let _ = app.emit("cloud://mode-changed", &parsed_mode);
+    tracing::info!("{tag} Cloud mode changed to {:?}", parsed_mode);
+    Ok(parsed_mode)
+}
+
 /// Checks the status of the cloud connection by performing a HEAD request to `/ping`.
 #[tauri::command]
 pub async fn get_cloud_status(
@@ -370,4 +417,99 @@ fn ensure_cloud_mode_enabled(settings: &State<'_, Arc<SettingsManager>>) -> Resu
     }
 
     Ok(())
+}
+
+fn parse_cloud_mode(new_mode: &str) -> Result<CloudMode, String> {
+    match new_mode.to_lowercase().as_str() {
+        "official" => Ok(CloudMode::Official),
+        "selfhost" | "self_host" | "self-host" => Ok(CloudMode::SelfHost),
+        "off" => Ok(CloudMode::Off),
+        other => Err(format!("Unsupported cloud mode: {other}")),
+    }
+}
+
+fn emit_validation(app: &AppHandle, mode: CloudMode, valid: bool, message: String) {
+    let event = if valid {
+        "cloud://config-valid"
+    } else {
+        "cloud://config-invalid"
+    };
+
+    let payload = CloudValidationPayload {
+        mode: mode_to_str(&mode).to_string(),
+        message: message.clone(),
+    };
+
+    let _ = app.emit(event, payload);
+}
+
+pub(crate) fn validate_self_host_settings(
+    app: &AppHandle,
+    settings: &CloudSettings,
+) -> Result<(), String> {
+    let tag = mode_log_tag(&CloudMode::SelfHost);
+    tracing::debug!("{tag} Validating self-hosted cloud settings");
+
+    let base_url = settings.base_url.trim();
+    if base_url.is_empty() {
+        let message = "Base URL is required for self-host mode".to_string();
+        emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        return Err(message);
+    }
+
+    if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
+        let message = "Base URL must start with http:// or https://".to_string();
+        emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        return Err(message);
+    }
+
+    if settings.enabled && settings.api_key.trim().is_empty() {
+        let message = "Access key is required for authenticated self-host mode".to_string();
+        emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        return Err(message);
+    }
+
+    emit_validation(
+        app,
+        CloudMode::SelfHost,
+        true,
+        "Self-host configuration is valid".to_string(),
+    );
+    Ok(())
+}
+
+pub(crate) fn validate_official_cloud_settings(
+    app: &AppHandle,
+    settings: &CloudSettings,
+) -> Result<(), String> {
+    let tag = mode_log_tag(&CloudMode::Official);
+    tracing::debug!("{tag} Validating official cloud settings");
+
+    if settings.base_url.trim().is_empty() {
+        let message = "Base URL is required for official cloud mode".to_string();
+        emit_validation(app, CloudMode::Official, false, message.clone());
+        return Err(message);
+    }
+
+    if settings.api_key.trim().is_empty() {
+        let message = "API key is required for official cloud mode".to_string();
+        emit_validation(app, CloudMode::Official, false, message.clone());
+        return Err(message);
+    }
+
+    emit_validation(
+        app,
+        CloudMode::Official,
+        true,
+        "Official cloud configuration is valid".to_string(),
+    );
+    Ok(())
+}
+
+fn mode_to_str(mode: &CloudMode) -> &'static str {
+    match mode {
+        CloudMode::Official => "official",
+        CloudMode::SelfHost => "self_host",
+        CloudMode::Off => "off",
+    }
 }
