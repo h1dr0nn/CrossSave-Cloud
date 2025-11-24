@@ -15,6 +15,8 @@ pub struct AppSettings {
     pub cloud: CloudSettings,
     #[serde(default)]
     pub cloud_mode: CloudMode,
+    #[serde(default)]
+    pub self_host: SelfHostSettings,
 }
 
 impl Default for AppSettings {
@@ -24,6 +26,7 @@ impl Default for AppSettings {
             auto_delete: true,
             cloud: CloudSettings::default(),
             cloud_mode: CloudMode::default(),
+            self_host: SelfHostSettings::default(),
         }
     }
 }
@@ -59,6 +62,25 @@ impl Default for CloudSettings {
             api_key: String::new(),
             device_id: String::new(),
             timeout_seconds: 30,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SelfHostSettings {
+    pub id_server: String,
+    pub relay_server: String,
+    pub api_server: String,
+    pub access_key: String,
+}
+
+impl Default for SelfHostSettings {
+    fn default() -> Self {
+        Self {
+            id_server: String::new(),
+            relay_server: String::new(),
+            api_server: String::new(),
+            access_key: String::new(),
         }
     }
 }

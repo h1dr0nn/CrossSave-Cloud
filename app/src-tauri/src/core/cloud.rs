@@ -12,7 +12,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::core::packager::SaveMetadata;
-use crate::core::settings::SettingsManager;
+use crate::core::settings::{CloudMode, SettingsManager};
 
 // =============================================================================
 // Configuration
@@ -158,7 +158,7 @@ impl CloudBackend for DisabledCloudBackend {
     }
 
     fn ensure_device_id(&self) -> Result<String, CloudError> {
-        Ok(String::new())
+        Err(CloudError::Disabled)
     }
 
     async fn list_devices(&self, _token: String) -> Result<Vec<CloudDevice>, CloudError> {
@@ -182,6 +182,8 @@ impl CloudBackend for DisabledCloudBackend {
 pub struct HttpCloudBackend {
     client: Client,
     settings: Arc<SettingsManager>,
+    mode: CloudMode,
+    log_tag: &'static str,
 }
 
 pub type SelfHostHttpBackend = HttpCloudBackend;
@@ -198,42 +200,69 @@ struct RegisterDeviceResponse {
 }
 
 impl HttpCloudBackend {
-    pub fn new(settings: Arc<SettingsManager>) -> Result<Self, CloudError> {
+    pub fn new(settings: Arc<SettingsManager>, mode: CloudMode) -> Result<Self, CloudError> {
         let config = settings
             .get_settings()
-            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?
-            .cloud;
-        let timeout = config.timeout_seconds.max(1);
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+        let timeout = config.cloud.timeout_seconds.max(1);
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(timeout))
             .build()
             .map_err(|e| CloudError::InvalidConfig(format!("client build failed: {e}")))?;
 
-        Ok(Self { client, settings })
+        let log_tag = match mode {
+            CloudMode::Official => "[CLOUD_OFFICIAL]",
+            CloudMode::SelfHost => "[CLOUD_SELF_HOST]",
+            CloudMode::Off => "[CLOUD_DISABLED]",
+        };
+
+        Ok(Self {
+            client,
+            settings,
+            mode,
+            log_tag,
+        })
     }
 
     fn validate_base_url(&self) -> Result<String, CloudError> {
-        let config = self
+        let settings = self
             .settings
             .get_settings()
-            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?
-            .cloud;
-        if config.base_url.trim().is_empty() {
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+
+        let base_url = match self.mode {
+            CloudMode::Official => settings.cloud.base_url,
+            CloudMode::SelfHost => settings.self_host.api_server,
+            CloudMode::Off => return Err(CloudError::Disabled),
+        };
+
+        if base_url.trim().is_empty() {
             return Err(CloudError::InvalidConfig("base_url missing".into()));
         }
-        Ok(config.base_url.trim_end_matches('/').to_string())
+        Ok(base_url.trim_end_matches('/').to_string())
     }
 
     fn get_auth_header(&self) -> Result<String, CloudError> {
-        let config = self
+        let settings = self
             .settings
             .get_settings()
-            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?
-            .cloud;
-        if config.api_key.trim().is_empty() {
-            return Err(CloudError::Unauthorized("api_key missing".into()));
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+
+        match self.mode {
+            CloudMode::Official => {
+                if settings.cloud.api_key.trim().is_empty() {
+                    return Err(CloudError::Unauthorized("api_key missing".into()));
+                }
+                Ok(format!("Bearer {}", settings.cloud.api_key))
+            }
+            CloudMode::SelfHost => {
+                if settings.self_host.access_key.trim().is_empty() {
+                    return Err(CloudError::Unauthorized("access_key missing".into()));
+                }
+                Ok(format!("Bearer {}", settings.self_host.access_key))
+            }
+            CloudMode::Off => Err(CloudError::Disabled),
         }
-        Ok(format!("Bearer {}", config.api_key))
     }
 
     async fn register_device(&self, token: &str) -> Result<String, CloudError> {
@@ -252,6 +281,7 @@ impl HttpCloudBackend {
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
         if !resp.status().is_success() {
+            error!("{} device register failed: {}", self.log_tag, resp.status());
             return Err(CloudError::NetworkError(format!(
                 "device register failed: {}",
                 resp.status()
@@ -279,6 +309,7 @@ impl HttpCloudBackend {
 #[async_trait]
 impl CloudBackend for HttpCloudBackend {
     async fn login(&self, email: String, password: String) -> Result<String, CloudError> {
+        info!("{} Attempting login", self.log_tag);
         let base_url = self.validate_base_url()?;
         let resp = self
             .client
@@ -289,9 +320,14 @@ impl CloudBackend for HttpCloudBackend {
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
         if !resp.status().is_success() {
+            warn!(
+                "{} Login failed with status {}",
+                self.log_tag,
+                resp.status()
+            );
             return Err(CloudError::Unauthorized(format!(
                 "status {}",
-                resp.status()
+                resp.status(),
             )));
         }
 
@@ -315,13 +351,17 @@ impl CloudBackend for HttpCloudBackend {
 
         Ok(parsed.token)
     }
-
     async fn upload_archive(
         &self,
         metadata: SaveMetadata,
         archive_path: PathBuf,
     ) -> Result<CloudVersionSummary, CloudError> {
         if !archive_path.exists() {
+            warn!(
+                "{} Archive not found at {}",
+                self.log_tag,
+                archive_path.display()
+            );
             return Err(CloudError::NotFound(format!(
                 "archive not found: {}",
                 archive_path.display()
@@ -368,6 +408,11 @@ impl CloudBackend for HttpCloudBackend {
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
         if !resp.status().is_success() {
+            error!(
+                "{} Upload failed with status {}",
+                self.log_tag,
+                resp.status()
+            );
             return Err(CloudError::NetworkError(format!(
                 "upload failed: {}",
                 resp.status()
@@ -442,6 +487,11 @@ impl CloudBackend for HttpCloudBackend {
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
         if !resp.status().is_success() {
+            error!(
+                "{} Download failed with status {}",
+                self.log_tag,
+                resp.status()
+            );
             return Err(CloudError::NetworkError(format!(
                 "download failed: {}",
                 resp.status()
@@ -465,17 +515,21 @@ impl CloudBackend for HttpCloudBackend {
     }
 
     fn ensure_device_id(&self) -> Result<String, CloudError> {
-        let config = self
+        let settings = self
             .settings
             .get_settings()
-            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?
-            .cloud;
-        if !config.enabled {
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+
+        if self.mode == CloudMode::Off {
+            return Err(CloudError::Disabled);
+        }
+
+        if !settings.cloud.enabled && self.mode == CloudMode::Official {
             return Err(CloudError::NotEnabled);
         }
 
-        if !config.device_id.trim().is_empty() {
-            return Ok(config.device_id);
+        if !settings.cloud.device_id.trim().is_empty() {
+            return Ok(settings.cloud.device_id);
         }
 
         let token = self.get_auth_header()?;
