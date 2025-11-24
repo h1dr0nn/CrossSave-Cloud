@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
@@ -48,6 +49,15 @@ pub struct CloudVersionSummary {
     pub size_bytes: u64,
     pub hash: String,
     pub device_id: String,
+    pub file_list: Vec<String>,
+    pub total_size_bytes: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CloudDevice {
+    pub device_id: String,
+    pub name: String,
+    pub last_sync: u64,
 }
 
 // ============================================================================
@@ -71,6 +81,8 @@ pub enum CloudError {
     Io(String),
     #[error("serialization error: {0}")]
     Serialization(String),
+    #[error("unauthorized: {0}")]
+    Unauthorized(String),
 }
 
 // ============================================================================
@@ -79,6 +91,7 @@ pub enum CloudError {
 
 #[async_trait]
 pub trait CloudBackend: Send + Sync {
+    async fn login(&self, email: String, password: String) -> Result<String, CloudError>;
     /// Upload a save archive to cloud storage
     async fn upload_archive(
         &self,
@@ -103,6 +116,12 @@ pub trait CloudBackend: Send + Sync {
 
     /// Ensure device ID exists and return it
     fn ensure_device_id(&self) -> Result<String, CloudError>;
+
+    async fn list_devices(&self, token: String) -> Result<Vec<CloudDevice>, CloudError>;
+
+    async fn remove_device(&self, token: String, device_id: String) -> Result<(), CloudError>;
+
+    fn get_device_id(&self) -> Result<String, CloudError>;
 }
 
 // ============================================================================
@@ -113,6 +132,14 @@ pub trait CloudBackend: Send + Sync {
 struct GameManifest {
     game_id: String,
     versions: Vec<CloudVersionSummary>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct AuthRecord {
+    email: String,
+    token: String,
+    issued_at: u64,
+    expires_at: u64,
 }
 
 pub struct MockCloudBackend {
@@ -148,7 +175,10 @@ impl MockCloudBackend {
             if let Ok(id) = fs::read_to_string(&device_id_file) {
                 let trimmed = id.trim();
                 if !trimmed.is_empty() {
-                    debug!("[CLOUD] Loaded existing device_id from {}", device_id_file.display());
+                    debug!(
+                        "[CLOUD] Loaded existing device_id from {}",
+                        device_id_file.display()
+                    );
                     return trimmed.to_string();
                 }
             }
@@ -156,7 +186,7 @@ impl MockCloudBackend {
 
         // Generate new device ID
         let new_id = Uuid::new_v4().to_string();
-        
+
         // Try to persist it
         if let Err(e) = fs::create_dir_all(storage_dir) {
             warn!("[CLOUD] Failed to create storage dir for device_id: {e}");
@@ -181,6 +211,14 @@ impl MockCloudBackend {
         self.game_dir(game_id).join(format!("{}.zip", version_id))
     }
 
+    fn auth_path(&self) -> PathBuf {
+        self.storage_dir.join("auth.json")
+    }
+
+    fn devices_path(&self) -> PathBuf {
+        self.storage_dir.join("devices.json")
+    }
+
     fn load_manifest(&self, game_id: &str) -> Result<GameManifest, CloudError> {
         let manifest_path = self.manifest_path(game_id);
 
@@ -199,6 +237,104 @@ impl MockCloudBackend {
             .map_err(|e| CloudError::Serialization(format!("Failed to parse manifest: {e}")))?;
 
         Ok(manifest)
+    }
+
+    fn load_auth(&self) -> Result<Option<AuthRecord>, CloudError> {
+        let path = self.auth_path();
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let content = fs::read_to_string(&path)
+            .map_err(|e| CloudError::Io(format!("Failed to read auth record: {e}")))?;
+
+        let record: AuthRecord = serde_json::from_str(&content)
+            .map_err(|e| CloudError::Serialization(format!("Failed to parse auth record: {e}")))?;
+
+        Ok(Some(record))
+    }
+
+    fn save_auth(&self, record: &AuthRecord) -> Result<(), CloudError> {
+        let path = self.auth_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| CloudError::Io(format!("Failed to create auth dir: {e}")))?;
+        }
+
+        let content = serde_json::to_string_pretty(record).map_err(|e| {
+            CloudError::Serialization(format!("Failed to serialize auth record: {e}"))
+        })?;
+
+        fs::write(&path, content)
+            .map_err(|e| CloudError::Io(format!("Failed to persist auth record: {e}")))?;
+        Ok(())
+    }
+
+    fn ensure_device_registered(&self) -> Result<(), CloudError> {
+        let mut devices = self.load_devices()?;
+        if !devices
+            .iter()
+            .any(|device| device.device_id == self.device_id)
+        {
+            devices.push(CloudDevice {
+                device_id: self.device_id.clone(),
+                name: "Current Device".to_string(),
+                last_sync: Utc::now().timestamp_millis() as u64,
+            });
+            self.save_devices(&devices)?;
+        }
+        Ok(())
+    }
+
+    fn load_devices(&self) -> Result<Vec<CloudDevice>, CloudError> {
+        let path = self.devices_path();
+        if !path.exists() {
+            return Ok(vec![CloudDevice {
+                device_id: self.device_id.clone(),
+                name: "Current Device".to_string(),
+                last_sync: Utc::now().timestamp_millis() as u64,
+            }]);
+        }
+
+        let content = fs::read_to_string(&path)
+            .map_err(|e| CloudError::Io(format!("Failed to read devices: {e}")))?;
+
+        let devices: Vec<CloudDevice> = serde_json::from_str(&content)
+            .map_err(|e| CloudError::Serialization(format!("Failed to parse devices: {e}")))?;
+
+        Ok(devices)
+    }
+
+    fn save_devices(&self, devices: &[CloudDevice]) -> Result<(), CloudError> {
+        let path = self.devices_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| CloudError::Io(format!("Failed to create devices dir: {e}")))?;
+        }
+
+        let content = serde_json::to_string_pretty(devices)
+            .map_err(|e| CloudError::Serialization(format!("Failed to serialize devices: {e}")))?;
+
+        fs::write(&path, content)
+            .map_err(|e| CloudError::Io(format!("Failed to write devices: {e}")))?;
+        Ok(())
+    }
+
+    fn validate_token(&self, token: &str) -> Result<(), CloudError> {
+        let Some(record) = self.load_auth()? else {
+            return Err(CloudError::Unauthorized("not logged in".into()));
+        };
+
+        if record.token != token {
+            return Err(CloudError::Unauthorized("invalid token".into()));
+        }
+
+        let now = Utc::now().timestamp_millis() as u64;
+        if now > record.expires_at {
+            return Err(CloudError::Unauthorized("token expired".into()));
+        }
+
+        Ok(())
     }
 
     fn save_manifest(&self, manifest: &GameManifest) -> Result<(), CloudError> {
@@ -228,6 +364,28 @@ impl MockCloudBackend {
 
 #[async_trait]
 impl CloudBackend for MockCloudBackend {
+    async fn login(&self, email: String, password: String) -> Result<String, CloudError> {
+        if email.trim().is_empty() || password.len() < 6 {
+            return Err(CloudError::Unauthorized(
+                "email or password invalid".to_string(),
+            ));
+        }
+
+        self.ensure_device_registered()?;
+
+        let now_ms = Utc::now().timestamp_millis() as u64;
+        let token = Uuid::new_v4().to_string();
+        let record = AuthRecord {
+            email,
+            token: token.clone(),
+            issued_at: now_ms,
+            expires_at: now_ms + 86_400_000,
+        };
+
+        self.save_auth(&record)?;
+        Ok(token)
+    }
+
     async fn upload_archive(
         &self,
         metadata: SaveMetadata,
@@ -260,6 +418,8 @@ impl CloudBackend for MockCloudBackend {
             size_bytes,
             hash: metadata.hash.clone(),
             device_id: self.device_id.clone(),
+            file_list: metadata.file_list.clone(),
+            total_size_bytes: size_bytes,
         };
 
         // Copy archive to mock cloud storage
@@ -272,23 +432,24 @@ impl CloudBackend for MockCloudBackend {
         fs::copy(&archive_path, &target_path)
             .map_err(|e| CloudError::Io(format!("Failed to copy archive: {e}")))?;
 
-        debug!(
-            "[CLOUD] Copied archive to {}",
-            target_path.display()
-        );
+        debug!("[CLOUD] Copied archive to {}", target_path.display());
 
         // Update manifest
         let mut manifest = self.load_manifest(&metadata.game_id)?;
-        
+
         // Remove existing version with same ID (if any)
-        manifest.versions.retain(|v| v.version_id != summary.version_id);
-        
+        manifest
+            .versions
+            .retain(|v| v.version_id != summary.version_id);
+
         // Add new version
         manifest.versions.push(summary.clone());
-        
+
         // Sort by timestamp (newest first)
-        manifest.versions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-        
+        manifest
+            .versions
+            .sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
         self.save_manifest(&manifest)?;
 
         info!(
@@ -307,9 +468,9 @@ impl CloudBackend for MockCloudBackend {
         debug!("[CLOUD] Listing versions for game_id={}", game_id);
 
         let manifest = self.load_manifest(&game_id)?;
-        
+
         let mut versions = manifest.versions;
-        
+
         // Apply limit if specified
         if let Some(limit) = limit {
             versions.truncate(limit);
@@ -353,15 +514,39 @@ impl CloudBackend for MockCloudBackend {
         fs::copy(&source_path, &target_path)
             .map_err(|e| CloudError::Io(format!("Failed to download archive: {e}")))?;
 
-        info!(
-            "[CLOUD] Downloaded to {}",
-            target_path.display()
-        );
+        info!("[CLOUD] Downloaded to {}", target_path.display());
 
         Ok(())
     }
 
     fn ensure_device_id(&self) -> Result<String, CloudError> {
+        self.ensure_device_registered()?;
+        Ok(self.device_id.clone())
+    }
+
+    async fn list_devices(&self, token: String) -> Result<Vec<CloudDevice>, CloudError> {
+        self.validate_token(&token)?;
+        self.ensure_device_registered()?;
+        let devices = self.load_devices()?;
+        Ok(devices)
+    }
+
+    async fn remove_device(&self, token: String, device_id: String) -> Result<(), CloudError> {
+        self.validate_token(&token)?;
+        let mut devices = self.load_devices()?;
+        devices.retain(|device| device.device_id != device_id);
+        if devices.is_empty() {
+            devices.push(CloudDevice {
+                device_id: self.device_id.clone(),
+                name: "Current Device".to_string(),
+                last_sync: Utc::now().timestamp_millis() as u64,
+            });
+        }
+        self.save_devices(&devices)?;
+        Ok(())
+    }
+
+    fn get_device_id(&self) -> Result<String, CloudError> {
         Ok(self.device_id.clone())
     }
 }

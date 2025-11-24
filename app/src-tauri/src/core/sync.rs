@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, Notify};
 use tokio::time::sleep;
-use tracing::{info, error, warn};
+use tracing::{error, info, warn};
 
 use crate::core::cloud::{CloudBackend, CloudVersionSummary};
-use crate::core::history::{HistoryManager, HistoryEntry};
+use crate::core::history::{HistoryEntry, HistoryManager};
 use crate::core::settings::SettingsManager;
 
 // ============================================================================
@@ -27,7 +27,7 @@ pub enum SyncDecision {
 }
 
 /// Determines the sync action based on local and cloud state.
-/// 
+///
 /// Rules:
 /// - If cloud has no versions -> Upload local (if exists)
 /// - If local has no history -> Download latest cloud
@@ -50,31 +50,31 @@ pub fn determine_sync_action(
         (Some(local), Some(cloud)) => {
             let local_time = local.metadata.timestamp;
             let cloud_time = cloud.timestamp;
-            
-            // Check for conflict (close timestamp, different hash)
-            let time_diff = if local_time > cloud_time {
-                local_time - cloud_time
-            } else {
-                cloud_time - local_time
-            };
 
-            if time_diff < 2 {
-                 return SyncDecision::Conflict;
+            if cloud.hash == local.metadata.hash {
+                return SyncDecision::Noop;
             }
 
-            if local_time > cloud_time {
-                SyncDecision::Upload
-            } else if cloud_time > local_time {
+            let time_diff_ms = if cloud_time > local_time {
+                cloud_time - local_time
+            } else {
+                local_time - cloud_time
+            } * 1000;
+
+            if time_diff_ms < 2000 {
+                return SyncDecision::Conflict;
+            }
+
+            if cloud_time > local_time {
                 SyncDecision::Download(cloud.version_id.clone())
             } else {
-                SyncDecision::Noop
+                SyncDecision::Upload
             }
         }
     }
 }
 
 // ...
-
 
 // ============================================================================
 // Upload Queue
@@ -139,9 +139,9 @@ impl UploadQueue {
     pub async fn get_status(&self) -> SyncStatus {
         let q_len = self.queue.lock().await.len();
         let active = self.active_job.lock().await.clone();
-        
+
         let is_syncing = q_len > 0 || active.is_some();
-        
+
         SyncStatus {
             queue_length: q_len,
             active_job: active,
@@ -160,7 +160,7 @@ impl UploadQueue {
         let status = self.get_status().await;
         let _ = self.app_handle.emit("sync://status", status);
     }
-    
+
     pub async fn process_queue(&self, cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>) {
         loop {
             // Wait for a job
@@ -182,7 +182,7 @@ impl UploadQueue {
                 self.emit_status().await;
 
                 info!("[SYNC] Starting upload for {}", job.game_id);
-                
+
                 // Perform Upload
                 let result = self.perform_upload(&job, &cloud).await;
 
@@ -198,7 +198,8 @@ impl UploadQueue {
                             warn!("[SYNC] Retrying job (attempt {})", retries);
                             let mut q = self.queue.lock().await;
                             q.push_front(job); // Put back at front
-                            sleep(Duration::from_secs(2u64.pow(retries))).await; // Exponential backoff
+                            sleep(Duration::from_secs(2u64.pow(retries))).await;
+                        // Exponential backoff
                         } else {
                             error!("[SYNC] Job failed after 3 retries, dropping.");
                         }
@@ -218,33 +219,38 @@ impl UploadQueue {
         }
     }
 
-    async fn perform_upload(&self, job: &UploadJob, cloud: &Arc<Mutex<Box<dyn CloudBackend + Send>>>) -> Result<(), String> {
+    async fn perform_upload(
+        &self,
+        job: &UploadJob,
+        cloud: &Arc<Mutex<Box<dyn CloudBackend + Send>>>,
+    ) -> Result<(), String> {
         // Re-use logic from cloud_api or call backend directly
-        // We need metadata. For simplicity, we might need to fetch it from HistoryManager again 
-        // OR store metadata in UploadJob. 
+        // We need metadata. For simplicity, we might need to fetch it from HistoryManager again
+        // OR store metadata in UploadJob.
         // Let's assume we can reconstruct basic metadata or we should update UploadJob to carry it.
         // For now, let's just try to upload with basic info.
-        
-        // Ideally, we should use the HistoryManager to get the full entry, 
+
+        // Ideally, we should use the HistoryManager to get the full entry,
         // but passing HistoryManager here is complex.
         // Let's assume the backend just needs the file and some metadata.
-        
+
         let backend = cloud.lock().await;
-        
+
         // Construct minimal metadata
         let metadata = crate::core::packager::SaveMetadata {
             game_id: job.game_id.clone(),
             emulator_id: job.emulator_id.clone(),
             version_id: job.version_id.clone(),
             timestamp: job.created_at.timestamp() as u64,
-            file_list: Vec::new(), // We lost this info in UploadJob
+            file_list: Vec::new(),       // We lost this info in UploadJob
             hash: "pending".to_string(), // We lost this info
         };
 
-        backend.upload_archive(metadata, job.archive_path.clone())
+        backend
+            .upload_archive(metadata, job.archive_path.clone())
             .await
             .map_err(|e| e.to_string())?;
-            
+
         Ok(())
     }
 }
@@ -270,7 +276,7 @@ impl SyncManager {
         settings: Arc<SettingsManager>,
     ) -> Self {
         let queue = Arc::new(UploadQueue::new(app_handle.clone()));
-        
+
         Self {
             queue,
             cloud,
@@ -288,7 +294,7 @@ impl SyncManager {
     pub fn start_background_task(&self) {
         let queue = self.queue.clone();
         let cloud = self.cloud.clone();
-        
+
         // Spawn Queue Processor
         tokio::spawn(async move {
             queue.process_queue(cloud).await;
@@ -311,42 +317,54 @@ impl SyncManager {
                         info!("[SYNC] Manual sync triggered");
                     }
                 }
-                
+
                 // Check if sync is enabled
-                let enabled = settings_clone.get_settings().map(|s| s.cloud.enabled).unwrap_or(false);
+                let enabled = settings_clone
+                    .get_settings()
+                    .map(|s| s.cloud.enabled)
+                    .unwrap_or(false);
                 if !enabled {
                     continue;
                 }
 
                 info!("[SYNC] Starting sync cycle...");
-                
+
                 // 1. List all games from History
-                let games = history_clone.get_games(); 
-                
+                let games = history_clone.get_games();
+
                 for game_id in games {
                     // Get Local State
                     let local_latest = history_clone.get_latest_version(&game_id);
-                    
+
                     // Get Cloud State
                     let backend = cloud_clone.lock().await;
-                    let cloud_versions = backend.list_versions(game_id.clone(), Some(1)).await.unwrap_or_default();
+                    let cloud_versions = backend
+                        .list_versions(game_id.clone(), Some(1))
+                        .await
+                        .unwrap_or_default();
                     drop(backend); // Release lock
 
                     // Decide
                     let decision = determine_sync_action(local_latest.as_ref(), &cloud_versions);
-                    
+
                     match decision {
                         SyncDecision::Upload => {
                             if let Some(local) = local_latest {
                                 info!("[SYNC] Queueing upload for {}", game_id);
-                                queue_clone.add_job(UploadJob {
-                                    game_id: game_id.clone(),
-                                    emulator_id: local.metadata.emulator_id.clone(),
-                                    version_id: local.metadata.version_id.clone(),
-                                    archive_path: PathBuf::from(&local.archive_path),
-                                    created_at: DateTime::from_timestamp(local.metadata.timestamp as i64, 0).unwrap_or_default(),
-                                    retries: 0,
-                                }).await;
+                                queue_clone
+                                    .add_job(UploadJob {
+                                        game_id: game_id.clone(),
+                                        emulator_id: local.metadata.emulator_id.clone(),
+                                        version_id: local.metadata.version_id.clone(),
+                                        archive_path: PathBuf::from(&local.archive_path),
+                                        created_at: DateTime::from_timestamp(
+                                            local.metadata.timestamp as i64,
+                                            0,
+                                        )
+                                        .unwrap_or_default(),
+                                        retries: 0,
+                                    })
+                                    .await;
                             }
                         }
                         SyncDecision::Download(version_id) => {
