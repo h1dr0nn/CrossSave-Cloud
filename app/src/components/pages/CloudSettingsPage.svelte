@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { goto } from "$app/navigation";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import AppHeader from "../layout/AppHeader.svelte";
   import { pushInfo, pushSuccess, pushError } from "$lib/notifications";
   import {
@@ -9,6 +10,7 @@
     type CloudConfig,
     type CloudMode,
     type CloudValidationResult,
+    type SelfHostSettings,
   } from "$lib/stores/cloudStore";
 
   const modeStore = cloudStore.cloudMode;
@@ -32,6 +34,7 @@
   let onlineStatus: "online" | "offline" | "fail" | "ready" = "offline";
   let localConfig: CloudConfig = { mode: "off", auth_mode: "NONE" };
   let validation: CloudValidationResult = { status: "idle", message: "" };
+  let connectionStatus: "online" | "offline" = "offline";
   let loading = true;
   let saving = false;
   let validating = false;
@@ -45,18 +48,113 @@
   let connecting = false;
   let officialConnecting = false;
   let officialConnectionFailed = false;
+  let unlisteners: UnlistenFn[] = [];
 
-  $: activeMode = ($modeStore as CloudMode) ?? "off";
-  $: onlineStatus = ($onlineStatusStore as "online" | "offline") ?? "offline";
+  $: activeMode = ($modeStore as CloudMode) ?? activeMode;
+  $: connectionStatus = ($onlineStatusStore as "online" | "offline") ?? connectionStatus;
   $: validation = ($validationStore as CloudValidationResult) ?? {
     status: "idle",
     message: "",
   };
+  $: {
+    if (validation.status === "valid") {
+      onlineStatus = "ready";
+      officialConnecting = false;
+      connecting = false;
+      officialConnectionFailed = false;
+      statusMessage = validation.message ?? statusMessage;
+    } else if (validation.status === "invalid") {
+      onlineStatus = "fail";
+      officialConnecting = false;
+      connecting = false;
+      officialConnectionFailed = activeMode === "official";
+      statusMessage = validation.message ?? statusMessage;
+    } else {
+      onlineStatus = connectionStatus ?? "offline";
+    }
+  }
   $: if ($configStore) {
     localConfig = { ...localConfig, ...$configStore };
+    if ($configStore.self_host) {
+      idServer = $configStore.self_host.id_server ?? idServer;
+      relayServer = $configStore.self_host.relay_server ?? relayServer;
+      apiServer = $configStore.self_host.api_server ?? apiServer;
+      key = $configStore.self_host.access_key ?? key;
+    }
+  }
+
+  function currentSelfHostSettings(): SelfHostSettings {
+    return {
+      id_server: idServer.trim(),
+      relay_server: relayServer.trim(),
+      api_server: apiServer.trim(),
+      access_key: key.trim(),
+    };
+  }
+
+  async function setupEventListeners() {
+    try {
+      unlisteners = await Promise.all([
+        listen("sync://online", () => {
+          connectionStatus = "online";
+          if (validation.status === "idle") {
+            onlineStatus = "online";
+          }
+        }),
+        listen("sync://offline", () => {
+          connectionStatus = "offline";
+          if (validation.status === "idle") {
+            onlineStatus = "offline";
+          }
+        }),
+        listen<{ mode: CloudMode; config?: CloudConfig }>(
+          "cloud://mode-changed",
+          (event) => {
+            activeMode = event.payload.mode;
+            if (event.payload.config) {
+              localConfig = { ...localConfig, ...event.payload.config };
+            }
+          }
+        ),
+        listen<{ config: CloudConfig }>("cloud://backend-switched", (event) => {
+          localConfig = { ...localConfig, ...event.payload.config };
+          if (event.payload.config?.mode) {
+            activeMode = event.payload.config.mode as CloudMode;
+          }
+        }),
+        listen<{ mode: CloudMode; message: string }>(
+          "cloud://config-valid",
+          (event) => {
+            statusMessage = event.payload?.message ?? statusMessage;
+            officialConnectionFailed = false;
+          }
+        ),
+        listen<{ mode: CloudMode; message: string }>(
+          "cloud://config-invalid",
+          (event) => {
+            statusMessage = event.payload?.message ?? statusMessage;
+            officialConnectionFailed = event.payload?.mode === "official";
+            connecting = false;
+            officialConnecting = false;
+          }
+        ),
+        listen("sync://download-progress", (event) => {
+          console.debug("[CloudSettings] Download progress", event.payload);
+        }),
+        listen("sync://download-complete", (event) => {
+          console.debug("[CloudSettings] Download complete", event.payload);
+        }),
+        listen("sync://download-error", (event) => {
+          console.debug("[CloudSettings] Download error", event.payload);
+        }),
+      ]);
+    } catch (error) {
+      console.error("Failed to bind cloud events", error);
+    }
   }
 
   onMount(async () => {
+    await setupEventListeners();
     try {
       await cloudStore.initialize();
       const config = (await cloudStore.getCloudConfig()) ?? {};
@@ -67,6 +165,11 @@
     } finally {
       loading = false;
     }
+  });
+
+  onDestroy(() => {
+    unlisteners.forEach((fn) => fn());
+    unlisteners = [];
   });
 
   function goBack() {
@@ -83,97 +186,62 @@
 
     // Update UI immediately (optimistic update)
     activeMode = newMode;
+    statusMessage = "";
+    officialConnectionFailed = false;
+    localConfig = { ...localConfig, mode: newMode };
 
-    // Update status based on mode
     if (newMode === "official") {
-      console.log("[CloudSettings] Starting connection test for official mode");
-      // Start connection test in background
-      testOfficialConnection();
-    } else if (newMode === "off") {
-      onlineStatus = "offline";
-      officialConnecting = false;
-      officialConnectionFailed = false;
+      officialConnecting = true;
     } else if (newMode === "self_host") {
-      onlineStatus = "offline";
+      connecting = true;
+    } else {
       officialConnecting = false;
-      officialConnectionFailed = false;
+      connecting = false;
     }
 
     // Update backend in background
     saving = true;
     try {
       await cloudStore.updateCloudMode(newMode);
-      console.log(
-        `[CloudSettings] Mode updated successfully in backend: ${newMode}`
-      );
+      if (newMode === "official") {
+        void cloudStore
+          .validateOfficialCloudSettings(localConfig)
+          .finally(() => {
+            officialConnecting = false;
+          });
+      } else if (newMode === "self_host") {
+        const selfHost = currentSelfHostSettings();
+        localConfig = { ...localConfig, self_host: selfHost, mode: "self_host" };
+        await cloudStore.updateCloudSettings(localConfig);
+        void cloudStore
+          .validateSelfHostSettings({ ...localConfig, self_host: selfHost, mode: "self_host" })
+          .finally(() => {
+            connecting = false;
+          });
+      }
     } catch (error) {
       console.error(
         "[CloudSettings] Failed to update cloud mode in backend:",
         error
       );
-      // Don't show error to user, just log it
-      // The UI already switched, backend sync can fail silently
     } finally {
       saving = false;
-    }
-  }
-
-  async function testOfficialConnection() {
-    officialConnecting = true;
-    officialConnectionFailed = false;
-    onlineStatus = "offline";
-
-    // Test connection with timeout
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Connection timeout")), 10000)
-    );
-
-    try {
-      // TODO: Replace with actual connection test
-      await Promise.race([
-        new Promise((resolve) => setTimeout(resolve, 2000)),
-        timeoutPromise,
-      ]);
-
-      // Simulate connection result
-      const success = Math.random() > 0.3;
-      if (success) {
-        onlineStatus = "online";
-        officialConnectionFailed = false;
-      } else {
-        throw new Error("Connection failed");
-      }
-    } catch (error) {
-      onlineStatus = "offline";
-      officialConnectionFailed = true;
-    } finally {
-      officialConnecting = false;
     }
   }
 
   async function handleReconnect() {
-    await testOfficialConnection();
-  }
-
-  async function updateSelfHostField(
-    field: keyof CloudConfig,
-    value: string | CloudAuthMode
-  ) {
-    if (activeMode !== "self_host") return;
-    saving = true;
+    officialConnecting = true;
     statusMessage = "";
-    const updated = { ...localConfig, [field]: value, mode: "self_host" };
-    localConfig = updated;
     try {
-      await cloudStore.updateCloudSettings(updated);
-      await cloudStore.validateSelfHostSettings(updated);
+      await cloudStore.validateOfficialCloudSettings(localConfig);
     } catch (error) {
-      statusMessage =
+      pushError(
         typeof error === "string"
           ? error
-          : ((error as Error)?.message ?? "Failed to update settings");
+          : ((error as Error)?.message ?? "Validation failed")
+      );
     } finally {
-      saving = false;
+      officialConnecting = false;
     }
   }
 
@@ -213,26 +281,20 @@
 
     saving = true;
     connecting = true;
-    onlineStatus = "offline";
+    statusMessage = "";
+    const selfHost = currentSelfHostSettings();
+    localConfig = { ...localConfig, self_host: selfHost, mode: "self_host" };
 
     try {
-      // TODO: Implement actual connection test to servers
-      // For now, simulate a connection test
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Simulate success/failure (replace with actual connection logic)
-      const success = Math.random() > 0.3; // 70% success rate for demo
-
-      if (success) {
-        onlineStatus = "ready";
-        pushSuccess("Connected successfully");
-      } else {
-        onlineStatus = "fail";
-        pushError("Connection failed");
-      }
+      await cloudStore.updateCloudSettings(localConfig);
+      await cloudStore.validateSelfHostSettings(localConfig);
+      pushSuccess("Configuration saved");
     } catch (error) {
-      onlineStatus = "fail";
-      pushError("Connection failed: " + error);
+      statusMessage =
+        typeof error === "string"
+          ? error
+          : ((error as Error)?.message ?? "Connection failed");
+      pushError("Connection failed: " + statusMessage);
     } finally {
       saving = false;
       connecting = false;
@@ -244,7 +306,6 @@
     relayServer = "";
     apiServer = "";
     key = "";
-    onlineStatus = "offline";
     pushInfo("Configuration cleared");
   }
 
@@ -269,6 +330,7 @@
   async function validateOfficial() {
     validating = true;
     try {
+      statusMessage = "";
       await cloudStore.validateOfficialCloudSettings(localConfig);
     } catch (error) {
       pushError(
@@ -299,7 +361,7 @@
         <div class="section-group">
           <div class="tab-shell">
             <div class="tab-header">
-              <div class="segmented" role="tablist" aria-label="Cloud mode">
+              <div class="segmented nowrap" role="tablist" aria-label="Cloud mode">
                 {#each modes as mode}
                   <button
                     type="button"
@@ -543,6 +605,10 @@
     border-radius: 14px;
     padding: 4px;
     gap: 6px;
+  }
+
+  .segmented.nowrap {
+    white-space: nowrap;
   }
 
   .segmented button {

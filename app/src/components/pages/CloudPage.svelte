@@ -95,6 +95,26 @@
     lastDownloadError = downloadState.error;
   }
 
+  $: {
+    let nextMessage: string | null = null;
+
+    if (downloadState.status === "downloading") {
+      nextMessage = `Downloading ${Math.round(downloadState.progress)}%`;
+    } else if (downloadState.status === "error" && downloadState.error) {
+      nextMessage = `Download error: ${downloadState.error}`;
+    } else if ($isSyncing && syncStatus) {
+      nextMessage = `Syncing (${syncStatus.queue_length} queued)`;
+    } else if (syncStatus && syncStatus.queue_length > 0) {
+      nextMessage = `${syncStatus.queue_length} pending`;
+    } else if (downloadState.status === "completed") {
+      nextMessage = "Sync complete";
+    }
+
+    if (nextMessage !== null) {
+      syncMessage = nextMessage;
+    }
+  }
+
   onMount(async () => {
     await cloudStore.initialize();
     if (get(isLoggedIn)) {
@@ -148,14 +168,11 @@
 
   async function handleSyncNow() {
     try {
-      syncMessage = "Syncing...";
+      syncMessage = "Sync requested...";
       await cloudStore.forceSyncNow();
       await loadSyncStatus();
-      syncMessage = "Sync started";
-      setTimeout(() => (syncMessage = ""), 3000);
     } catch (error) {
       syncMessage = "Sync failed: " + error;
-      setTimeout(() => (syncMessage = ""), 5000);
     }
   }
 
