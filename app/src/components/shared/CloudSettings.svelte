@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { cloudStore } from "$lib/stores/cloudStore";
+  import { pushError, pushSuccess } from "$lib/notifications";
 
   let cloudConfig: any = null;
   let loading = true;
   let saving = false;
   let showApiKey = false;
   let deviceId = "";
+  let formError = "";
 
   onMount(async () => {
     try {
@@ -21,13 +23,32 @@
   });
 
   async function saveConfig() {
+    formError = "";
+
+    if (cloudConfig?.enabled) {
+      if (!cloudConfig.base_url || !cloudConfig.base_url.trim()) {
+        formError = "Base URL is required";
+        pushError(formError);
+        return;
+      }
+      if (!cloudConfig.api_key || !cloudConfig.api_key.trim()) {
+        formError = "API key is required";
+        pushError(formError);
+        return;
+      }
+    }
+
     saving = true;
     try {
       await cloudStore.updateCloudConfig(cloudConfig);
-      alert("Cloud settings saved successfully!");
+      pushSuccess("Cloud settings saved successfully");
     } catch (error) {
       console.error("Failed to save cloud config:", error);
-      alert("Failed to save cloud settings");
+      formError =
+        typeof error === "string"
+          ? error
+          : "Failed to save cloud settings";
+      pushError(formError);
     } finally {
       saving = false;
     }
@@ -128,6 +149,10 @@
       </label>
       <p class="hint">Request timeout duration</p>
     </div>
+
+    {#if formError}
+      <p class="error">{formError}</p>
+    {/if}
 
     <button
       class="btn-primary save-btn"
@@ -286,5 +311,10 @@
 
   .save-btn {
     margin-top: 1rem;
+  }
+
+  .error {
+    color: var(--danger);
+    margin: 0.5rem 0;
   }
 </style>

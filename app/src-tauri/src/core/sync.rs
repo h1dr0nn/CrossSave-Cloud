@@ -1,21 +1,25 @@
 use std::collections::VecDeque;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{Mutex, Notify};
 use tokio::time::sleep;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::core::cloud::{CloudBackend, CloudVersionSummary};
 use crate::core::history::{HistoryEntry, HistoryManager};
-use crate::core::settings::SettingsManager;
 use crate::core::packager::SaveMetadata;
+use crate::core::settings::SettingsManager;
 use zip::ZipArchive;
 
 // ============================================================================
@@ -82,6 +86,24 @@ pub fn determine_sync_action(
     }
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct DownloadProgressPayload {
+    version_id: String,
+    progress: u8,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct DownloadCompletePayload {
+    version_id: String,
+    path: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct DownloadErrorPayload {
+    version_id: String,
+    message: String,
+}
+
 // ...
 
 // ============================================================================
@@ -123,12 +145,14 @@ pub struct UploadQueue {
     queue: Arc<Mutex<VecDeque<UploadJob>>>,
     active_job: Arc<Mutex<Option<UploadJob>>>,
     notify: Arc<Notify>,
+    online_notify: Arc<Notify>,
+    online_status: Arc<AtomicBool>,
     app_handle: AppHandle,
     queue_path: PathBuf,
 }
 
 impl UploadQueue {
-    pub fn new(app_handle: AppHandle) -> Self {
+    pub fn new(app_handle: AppHandle, online_status: Arc<AtomicBool>) -> Self {
         let queue_path = app_handle
             .path()
             .app_data_dir()
@@ -138,6 +162,8 @@ impl UploadQueue {
             queue: Arc::new(Mutex::new(VecDeque::new())),
             active_job: Arc::new(Mutex::new(None)),
             notify: Arc::new(Notify::new()),
+            online_notify: Arc::new(Notify::new()),
+            online_status,
             app_handle,
             queue_path,
         }
@@ -203,6 +229,16 @@ impl UploadQueue {
         self.emit_status().await;
     }
 
+    pub fn signal_online(&self) {
+        self.online_notify.notify_waiters();
+    }
+
+    async fn wait_for_online(&self) {
+        while !self.online_status.load(Ordering::SeqCst) {
+            let _ = self.online_notify.notified().await;
+        }
+    }
+
     async fn emit_status(&self) {
         let status = self.get_status().await;
         let _ = self.app_handle.emit("sync://status", status);
@@ -210,6 +246,11 @@ impl UploadQueue {
 
     pub async fn process_queue(&self, cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>) {
         loop {
+            if !self.online_status.load(Ordering::SeqCst) {
+                self.wait_for_online().await;
+                continue;
+            }
+
             // Wait for a job
             let job = {
                 let mut q = self.queue.lock().await;
@@ -268,7 +309,10 @@ impl UploadQueue {
                 self.emit_status().await;
             } else {
                 // Wait for notification
-                self.notify.notified().await;
+                tokio::select! {
+                    _ = self.notify.notified() => {},
+                    _ = self.online_notify.notified() => {},
+                }
             }
         }
     }
@@ -300,6 +344,7 @@ pub struct SyncManager {
     pub cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>,
     pub history: Arc<HistoryManager>,
     pub settings: Arc<SettingsManager>,
+    online: Arc<AtomicBool>,
     app_handle: AppHandle,
     sync_trigger: Arc<Notify>,
     running: Arc<AtomicBool>,
@@ -312,13 +357,15 @@ impl SyncManager {
         history: Arc<HistoryManager>,
         settings: Arc<SettingsManager>,
     ) -> Self {
-        let queue = Arc::new(UploadQueue::new(app_handle.clone()));
+        let online = Arc::new(AtomicBool::new(true));
+        let queue = Arc::new(UploadQueue::new(app_handle.clone(), online.clone()));
 
         Self {
             queue,
             cloud,
             history,
             settings,
+            online,
             app_handle,
             sync_trigger: Arc::new(Notify::new()),
             running: Arc::new(AtomicBool::new(false)),
@@ -332,10 +379,33 @@ impl SyncManager {
     pub fn start_background_task(&self) {
         let queue = self.queue.clone();
         let cloud = self.cloud.clone();
+        let settings_for_ping = self.settings.clone();
+        let app_for_ping = self.app_handle.clone();
+        let online_flag = self.online.clone();
+        let queue_for_online = self.queue.clone();
+        let trigger_for_online = self.sync_trigger.clone();
 
         // Spawn Queue Processor
         tokio::spawn(async move {
             queue.process_queue(cloud).await;
+        });
+
+        // Connectivity monitor
+        tokio::spawn(async move {
+            loop {
+                let online = check_online(&settings_for_ping).await;
+                let previous = online_flag.swap(online, Ordering::SeqCst);
+
+                if online && !previous {
+                    let _ = app_for_ping.emit("sync://online", "online");
+                    queue_for_online.signal_online();
+                    trigger_for_online.notify_one();
+                } else if !online && previous {
+                    let _ = app_for_ping.emit("sync://offline", "offline");
+                }
+
+                sleep(Duration::from_secs(15)).await;
+            }
         });
 
         // Spawn Sync Loop
@@ -346,6 +416,7 @@ impl SyncManager {
         let app_handle_clone = self.app_handle.clone();
         let sync_trigger = self.sync_trigger.clone();
         let running_flag = self.running.clone();
+        let online_status = self.online.clone();
 
         tokio::spawn(async move {
             if running_flag.swap(true, Ordering::SeqCst) {
@@ -371,6 +442,11 @@ impl SyncManager {
                     continue;
                 }
 
+                if !online_status.load(Ordering::SeqCst) {
+                    info!("[SYNC] Skipping sync cycle while offline");
+                    continue;
+                }
+
                 info!("[SYNC] Starting sync cycle...");
 
                 // 1. List all games from History
@@ -393,8 +469,11 @@ impl SyncManager {
                     drop(backend); // Release lock
 
                     // Decide
-                    let decision =
-                        determine_sync_action(local_latest.as_ref(), &cloud_versions, &current_device);
+                    let decision = determine_sync_action(
+                        local_latest.as_ref(),
+                        &cloud_versions,
+                        &current_device,
+                    );
 
                     match decision {
                         SyncDecision::Upload => {
@@ -448,6 +527,39 @@ impl SyncManager {
     }
 }
 
+async fn check_online(settings: &Arc<SettingsManager>) -> bool {
+    let config = match settings.get_settings() {
+        Ok(s) => s.cloud,
+        Err(err) => {
+            warn!("[SYNC] Failed to read settings for ping: {}", err);
+            return false;
+        }
+    };
+
+    let base_url = config.base_url.trim_end_matches('/').to_string();
+    if base_url.is_empty() {
+        warn!("[SYNC] Cloud base_url missing; marking offline");
+        return false;
+    }
+
+    let timeout = Duration::from_secs(config.timeout_seconds.max(1));
+    let client = match Client::builder().timeout(timeout).build() {
+        Ok(client) => client,
+        Err(err) => {
+            warn!("[SYNC] Failed to build ping client: {}", err);
+            return false;
+        }
+    };
+
+    match client.head(format!("{}/ping", base_url)).send().await {
+        Ok(response) => response.status().is_success(),
+        Err(err) => {
+            debug!("[SYNC] Ping failed: {}", err);
+            false
+        }
+    }
+}
+
 impl Clone for SyncManager {
     fn clone(&self) -> Self {
         Self {
@@ -455,6 +567,7 @@ impl Clone for SyncManager {
             cloud: self.cloud.clone(),
             history: self.history.clone(),
             settings: self.settings.clone(),
+            online: self.online.clone(),
             app_handle: self.app_handle.clone(),
             sync_trigger: self.sync_trigger.clone(),
             running: self.running.clone(),
@@ -477,72 +590,111 @@ async fn perform_download(
         .join("cloud_downloads");
     let target_path = downloads_dir.join(format!("{}_{}.zip", game_id, version_id));
 
-    let summary = {
-        let backend = cloud.lock().await;
-        let versions = backend
-            .list_versions(game_id.clone(), None)
-            .await
-            .map_err(|e| e.to_string())?;
-        versions
-            .into_iter()
-            .find(|v| v.version_id == version_id)
-            .ok_or_else(|| "version not found in cloud".to_string())?
+    let start_progress = DownloadProgressPayload {
+        version_id: version_id.clone(),
+        progress: 0,
     };
+    let _ = app_handle.emit("sync://download-progress", start_progress);
 
-    let _ = app_handle.emit("sync://download-progress", 0u8);
-    {
-        let backend = cloud.lock().await;
-        backend
-            .download_version(game_id.clone(), version_id.clone(), target_path.clone())
-            .await
-            .map_err(|e| e.to_string())?;
-    }
+    let result: Result<(), String> = async {
+        let summary = {
+            let backend = cloud.lock().await;
+            let versions = backend
+                .list_versions(game_id.clone(), None)
+                .await
+                .map_err(|e| e.to_string())?;
+            versions
+                .into_iter()
+                .find(|v| v.version_id == version_id)
+                .ok_or_else(|| "version not found in cloud".to_string())?
+        };
 
-    let _ = app_handle.emit("sync://download-progress", 50u8);
+        {
+            let backend = cloud.lock().await;
+            backend
+                .download_version(game_id.clone(), version_id.clone(), target_path.clone())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
 
-    // Extract archive
-    if let Some(parent) = downloads_dir.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
+        let mid_progress = DownloadProgressPayload {
+            version_id: version_id.clone(),
+            progress: 50,
+        };
+        let _ = app_handle.emit("sync://download-progress", mid_progress);
 
-    let extract_dir = history.base_dir.join(&game_id).join("downloaded");
-    let file = fs::File::open(&target_path).map_err(|e| e.to_string())?;
-    let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
-    if extract_dir.exists() {
-        let _ = fs::remove_dir_all(&extract_dir);
-    }
-    fs::create_dir_all(&extract_dir).map_err(|e| e.to_string())?;
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
-        let out_path = extract_dir.join(file.name());
-        if file.is_dir() {
-            fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
-        } else {
-            if let Some(parent) = out_path.parent() {
-                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        // Extract archive
+        if let Some(parent) = downloads_dir.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+
+        let extract_dir = history.base_dir.join(&game_id).join("downloaded");
+        let file = fs::File::open(&target_path).map_err(|e| e.to_string())?;
+        let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
+        if extract_dir.exists() {
+            let _ = fs::remove_dir_all(&extract_dir);
+        }
+        fs::create_dir_all(&extract_dir).map_err(|e| e.to_string())?;
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+            let out_path = extract_dir.join(file.name());
+            if file.is_dir() {
+                fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
+            } else {
+                if let Some(parent) = out_path.parent() {
+                    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                let mut outfile = fs::File::create(&out_path).map_err(|e| e.to_string())?;
+                std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
             }
-            let mut outfile = fs::File::create(&out_path).map_err(|e| e.to_string())?;
-            std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+        }
+
+        let metadata = SaveMetadata {
+            game_id: summary.game_id.clone(),
+            emulator_id: summary.emulator_id.clone(),
+            timestamp: summary.timestamp,
+            version_id: summary.version_id.clone(),
+            file_list: summary.file_list.clone(),
+            hash: summary.hash.clone(),
+        };
+
+        history
+            .save_to_history(metadata, target_path.clone())
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+    .await;
+
+    match result {
+        Ok(_) => {
+            let _ = app_handle.emit(
+                "sync://download-progress",
+                DownloadProgressPayload {
+                    version_id: version_id.clone(),
+                    progress: 100,
+                },
+            );
+            let _ = app_handle.emit(
+                "sync://download-complete",
+                DownloadCompletePayload {
+                    version_id: version_id.clone(),
+                    path: target_path.to_string_lossy().to_string(),
+                },
+            );
+            Ok(())
+        }
+        Err(err) => {
+            let _ = app_handle.emit(
+                "sync://download-error",
+                DownloadErrorPayload {
+                    version_id: version_id.clone(),
+                    message: err.clone(),
+                },
+            );
+            Err(err)
         }
     }
-
-    let metadata = SaveMetadata {
-        game_id: summary.game_id.clone(),
-        emulator_id: summary.emulator_id.clone(),
-        timestamp: summary.timestamp,
-        version_id: summary.version_id.clone(),
-        file_list: summary.file_list.clone(),
-        hash: summary.hash.clone(),
-    };
-
-    history
-        .save_to_history(metadata, target_path.clone())
-        .map_err(|e| e.to_string())?;
-
-    let _ = app_handle.emit("sync://download-progress", 100u8);
-    let _ = app_handle.emit("sync://download-complete", version_id.clone());
-
-    Ok(())
 }
 
 fn calculate_sha256(path: &PathBuf) -> Result<String, std::io::Error> {

@@ -24,6 +24,24 @@ pub struct LoginResult {
     pub device_id: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct DownloadProgressPayload {
+    version_id: String,
+    progress: u8,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct DownloadCompletePayload {
+    version_id: String,
+    path: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct DownloadErrorPayload {
+    version_id: String,
+    message: String,
+}
+
 #[tauri::command]
 pub async fn login_cloud(
     email: String,
@@ -165,22 +183,42 @@ pub async fn download_cloud_version(
     }
 
     let backend = cloud.lock().await;
-    let _ = app.emit("sync://download-progress", 0u8);
+    let start_payload = DownloadProgressPayload {
+        version_id: version_id.clone(),
+        progress: 0,
+    };
+    let _ = app.emit("sync://download-progress", start_payload);
+
     match backend
-        .download_version(game_id, version_id, target_path.clone())
+        .download_version(game_id, version_id.clone(), target_path.clone())
         .await
     {
         Ok(_) => {
-            let _ = app.emit("sync://download-progress", 100u8);
             let _ = app.emit(
-                "sync://downloaded",
-                target_path.to_string_lossy().to_string(),
+                "sync://download-progress",
+                DownloadProgressPayload {
+                    version_id: version_id.clone(),
+                    progress: 100,
+                },
+            );
+            let _ = app.emit(
+                "sync://download-complete",
+                DownloadCompletePayload {
+                    version_id: version_id.clone(),
+                    path: target_path.to_string_lossy().to_string(),
+                },
             );
             Ok(target_path.to_string_lossy().to_string())
         }
         Err(err) => {
             let err_msg = cloud_error_to_string(err);
-            let _ = app.emit("sync://download-failed", err_msg.clone());
+            let _ = app.emit(
+                "sync://download-error",
+                DownloadErrorPayload {
+                    version_id: version_id.clone(),
+                    message: err_msg.clone(),
+                },
+            );
             Err(err_msg)
         }
     }
