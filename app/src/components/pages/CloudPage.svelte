@@ -870,8 +870,7 @@
       gap: 12px;
     }
 
-    .device-actions,
-    .version-actions {
+    .device-actions {
       width: 100%;
       justify-content: flex-end;
     }
