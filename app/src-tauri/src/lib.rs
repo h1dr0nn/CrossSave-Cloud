@@ -14,7 +14,7 @@ use api::settings_api::{
 };
 use api::sync_api::{clear_sync_queue, force_sync_now, get_sync_status};
 use api::watcher_api::{start_watcher, stop_watcher};
-use core::cloud::{CloudBackend, MockCloudBackend};
+use core::cloud::{CloudBackend, HttpCloudBackend};
 use core::history::HistoryManager;
 use core::profile::ProfileManager;
 use core::settings::SettingsManager;
@@ -98,20 +98,20 @@ pub fn run() {
             };
 
             // Cloud backend initialization
-            let cloud_storage_dir = app_data_dir.join("data").join("cloud_mock");
             let cloud_downloads_dir = app_data_dir.join("data").join("cloud_downloads");
-
-            if let Err(e) = std::fs::create_dir_all(&cloud_storage_dir) {
-                tracing::warn!("[CLOUD] Failed to create cloud storage dir: {e}");
-            }
             if let Err(e) = std::fs::create_dir_all(&cloud_downloads_dir) {
                 tracing::warn!("[CLOUD] Failed to create cloud downloads dir: {e}");
             }
 
-            let cloud_backend = MockCloudBackend::new(cloud_storage_dir, cloud_downloads_dir);
+            let cloud_backend = HttpCloudBackend::new(settings_manager.clone())
+                .unwrap_or_else(|err| {
+                    tracing::error!("[CLOUD] Failed to initialize HTTP backend: {err}");
+                    HttpCloudBackend::new(settings_manager.clone())
+                        .expect("Failed to init fallback http backend")
+                });
             let cloud: Box<dyn CloudBackend + Send> = Box::new(cloud_backend);
 
-            tracing::info!("[CLOUD] Mock cloud backend initialized");
+            tracing::info!("[CLOUD] HTTP cloud backend initialized");
 
             // Register state
             let history_arc = Arc::new(history_manager);

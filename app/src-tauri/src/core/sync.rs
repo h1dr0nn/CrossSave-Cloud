@@ -1,11 +1,13 @@
 use std::collections::VecDeque;
+use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc, AtomicBool};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use sha2::{Digest, Sha256};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{Mutex, Notify};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
@@ -13,6 +15,8 @@ use tracing::{error, info, warn};
 use crate::core::cloud::{CloudBackend, CloudVersionSummary};
 use crate::core::history::{HistoryEntry, HistoryManager};
 use crate::core::settings::SettingsManager;
+use crate::core::packager::SaveMetadata;
+use zip::ZipArchive;
 
 // ============================================================================
 // Sync Decision Logic
@@ -40,6 +44,7 @@ pub enum SyncDecision {
 pub fn determine_sync_action(
     local_entry: Option<&HistoryEntry>,
     cloud_versions: &[CloudVersionSummary],
+    current_device: &str,
 ) -> SyncDecision {
     let latest_cloud = cloud_versions.iter().max_by_key(|v| v.timestamp);
 
@@ -55,13 +60,16 @@ pub fn determine_sync_action(
                 return SyncDecision::Noop;
             }
 
-            let time_diff_ms = if cloud_time > local_time {
+            let time_diff = if cloud_time > local_time {
                 cloud_time - local_time
             } else {
                 local_time - cloud_time
-            } * 1000;
+            };
 
-            if time_diff_ms < 2000 {
+            let conflict_window = time_diff <= 2;
+            let different_device = !cloud.device_id.is_empty() && cloud.device_id != current_device;
+
+            if conflict_window && different_device {
                 return SyncDecision::Conflict;
             }
 
@@ -80,14 +88,27 @@ pub fn determine_sync_action(
 // Upload Queue
 // ============================================================================
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum UploadStatus {
+    Pending,
+    Uploading,
+    Failed,
+    Completed,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadJob {
     pub game_id: String,
     pub emulator_id: String,
     pub version_id: String,
     pub archive_path: PathBuf,
+    pub metadata: crate::core::packager::SaveMetadata,
     pub created_at: DateTime<Utc>,
     pub retries: u32,
+    pub status: UploadStatus,
+    pub total_size: u64,
+    pub hash: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -103,15 +124,22 @@ pub struct UploadQueue {
     active_job: Arc<Mutex<Option<UploadJob>>>,
     notify: Arc<Notify>,
     app_handle: AppHandle,
+    queue_path: PathBuf,
 }
 
 impl UploadQueue {
     pub fn new(app_handle: AppHandle) -> Self {
+        let queue_path = app_handle
+            .path()
+            .app_data_dir()
+            .map(|dir| dir.join("data").join("sync_queue.json"))
+            .unwrap_or_else(|_| PathBuf::from("sync_queue.json"));
         Self {
             queue: Arc::new(Mutex::new(VecDeque::new())),
             active_job: Arc::new(Mutex::new(None)),
             notify: Arc::new(Notify::new()),
             app_handle,
+            queue_path,
         }
     }
 
@@ -122,18 +150,37 @@ impl UploadQueue {
             q.push_back(job);
             self.notify.notify_one();
             self.emit_status().await;
+            self.save_to_disk().await;
         }
     }
 
-    #[allow(dead_code)]
     pub async fn load_from_disk(&self) {
-        // TODO: Implement persistence loading
-        // For now, start empty
+        if !self.queue_path.exists() {
+            return;
+        }
+
+        if let Ok(content) = fs::read_to_string(&self.queue_path) {
+            if let Ok(jobs) = serde_json::from_str::<Vec<UploadJob>>(&content) {
+                let mut q = self.queue.lock().await;
+                q.clear();
+                for mut job in jobs {
+                    if job.status == UploadStatus::Uploading {
+                        job.status = UploadStatus::Pending;
+                    }
+                    q.push_back(job);
+                }
+            }
+        }
     }
 
-    #[allow(dead_code)]
     pub async fn save_to_disk(&self) {
-        // TODO: Implement persistence saving
+        if let Some(parent) = self.queue_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let q = self.queue.lock().await;
+        if let Ok(json) = serde_json::to_string_pretty(&q.clone().into_iter().collect::<Vec<_>>()) {
+            let _ = fs::write(&self.queue_path, json);
+        }
     }
 
     pub async fn get_status(&self) -> SyncStatus {
@@ -183,12 +230,16 @@ impl UploadQueue {
 
                 info!("[SYNC] Starting upload for {}", job.game_id);
 
+                job.status = UploadStatus::Uploading;
+                self.save_to_disk().await;
+
                 // Perform Upload
                 let result = self.perform_upload(&job, &cloud).await;
 
                 match result {
                     Ok(_) => {
                         info!("[SYNC] Upload complete for {}", job.game_id);
+                        job.status = UploadStatus::Completed;
                     }
                     Err(e) => {
                         error!("[SYNC] Upload failed for {}: {}", job.game_id, e);
@@ -202,9 +253,12 @@ impl UploadQueue {
                         // Exponential backoff
                         } else {
                             error!("[SYNC] Job failed after 3 retries, dropping.");
+                            job.status = UploadStatus::Failed;
                         }
                     }
                 }
+
+                self.save_to_disk().await;
 
                 // Clear active
                 {
@@ -224,34 +278,15 @@ impl UploadQueue {
         job: &UploadJob,
         cloud: &Arc<Mutex<Box<dyn CloudBackend + Send>>>,
     ) -> Result<(), String> {
-        // Re-use logic from cloud_api or call backend directly
-        // We need metadata. For simplicity, we might need to fetch it from HistoryManager again
-        // OR store metadata in UploadJob.
-        // Let's assume we can reconstruct basic metadata or we should update UploadJob to carry it.
-        // For now, let's just try to upload with basic info.
-
-        // Ideally, we should use the HistoryManager to get the full entry,
-        // but passing HistoryManager here is complex.
-        // Let's assume the backend just needs the file and some metadata.
-
         let backend = cloud.lock().await;
-
-        // Construct minimal metadata
-        let metadata = crate::core::packager::SaveMetadata {
-            game_id: job.game_id.clone(),
-            emulator_id: job.emulator_id.clone(),
-            version_id: job.version_id.clone(),
-            timestamp: job.created_at.timestamp() as u64,
-            file_list: Vec::new(),       // We lost this info in UploadJob
-            hash: "pending".to_string(), // We lost this info
-        };
+        let mut metadata = job.metadata.clone();
+        let hash = calculate_sha256(&job.archive_path).map_err(|e| e.to_string())?;
+        metadata.hash = hash;
 
         backend
             .upload_archive(metadata, job.archive_path.clone())
             .await
-            .map_err(|e| e.to_string())?;
-
-        Ok(())
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -266,6 +301,7 @@ pub struct SyncManager {
     pub settings: Arc<SettingsManager>,
     app_handle: AppHandle,
     sync_trigger: Arc<Notify>,
+    running: Arc<AtomicBool>,
 }
 
 impl SyncManager {
@@ -284,6 +320,7 @@ impl SyncManager {
             settings,
             app_handle,
             sync_trigger: Arc::new(Notify::new()),
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -307,8 +344,14 @@ impl SyncManager {
         let settings_clone = self.settings.clone();
         let app_handle_clone = self.app_handle.clone();
         let sync_trigger = self.sync_trigger.clone();
+        let running_flag = self.running.clone();
 
         tokio::spawn(async move {
+            if running_flag.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+
+            queue_clone.load_from_disk().await;
             loop {
                 // Wait for either timeout (10s) or manual trigger
                 tokio::select! {
@@ -331,6 +374,10 @@ impl SyncManager {
 
                 // 1. List all games from History
                 let games = history_clone.get_games();
+                let current_device = settings_clone
+                    .get_settings()
+                    .map(|s| s.cloud.device_id)
+                    .unwrap_or_default();
 
                 for game_id in games {
                     // Get Local State
@@ -345,7 +392,8 @@ impl SyncManager {
                     drop(backend); // Release lock
 
                     // Decide
-                    let decision = determine_sync_action(local_latest.as_ref(), &cloud_versions);
+                    let decision =
+                        determine_sync_action(local_latest.as_ref(), &cloud_versions, &current_device);
 
                     match decision {
                         SyncDecision::Upload => {
@@ -357,20 +405,35 @@ impl SyncManager {
                                         emulator_id: local.metadata.emulator_id.clone(),
                                         version_id: local.metadata.version_id.clone(),
                                         archive_path: PathBuf::from(&local.archive_path),
+                                        metadata: local.metadata.clone(),
                                         created_at: DateTime::from_timestamp(
                                             local.metadata.timestamp as i64,
                                             0,
                                         )
                                         .unwrap_or_default(),
                                         retries: 0,
+                                        status: UploadStatus::Pending,
+                                        total_size: fs::metadata(&local.archive_path)
+                                            .map(|m| m.len())
+                                            .unwrap_or_default(),
+                                        hash: local.metadata.hash.clone(),
                                     })
                                     .await;
                             }
                         }
                         SyncDecision::Download(version_id) => {
                             info!("[SYNC] Should download {} version {}", game_id, version_id);
-                            // Trigger download logic (omitted for brevity in this step, can be added)
-                            // Ideally we call a download function here.
+                            if let Err(err) = perform_download(
+                                cloud_clone.clone(),
+                                history_clone.clone(),
+                                app_handle_clone.clone(),
+                                game_id.clone(),
+                                version_id,
+                            )
+                            .await
+                            {
+                                warn!("[SYNC] Download failed: {}", err);
+                            }
                         }
                         SyncDecision::Conflict => {
                             warn!("[SYNC] Conflict detected for {}", game_id);
@@ -395,4 +458,95 @@ impl Clone for SyncManager {
             sync_trigger: self.sync_trigger.clone(),
         }
     }
+}
+
+async fn perform_download(
+    cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>,
+    history: Arc<HistoryManager>,
+    app_handle: AppHandle,
+    game_id: String,
+    version_id: String,
+) -> Result<(), String> {
+    let downloads_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("path error: {e}"))?
+        .join("data")
+        .join("cloud_downloads");
+    let target_path = downloads_dir.join(format!("{}_{}.zip", game_id, version_id));
+
+    let summary = {
+        let backend = cloud.lock().await;
+        let versions = backend
+            .list_versions(game_id.clone(), None)
+            .await
+            .map_err(|e| e.to_string())?;
+        versions
+            .into_iter()
+            .find(|v| v.version_id == version_id)
+            .ok_or_else(|| "version not found in cloud".to_string())?
+    };
+
+    let _ = app_handle.emit("sync://download-progress", 0u8);
+    {
+        let backend = cloud.lock().await;
+        backend
+            .download_version(game_id.clone(), version_id.clone(), target_path.clone())
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    let _ = app_handle.emit("sync://download-progress", 50u8);
+
+    // Extract archive
+    if let Some(parent) = downloads_dir.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    let extract_dir = history.base_dir.join(&game_id).join("downloaded");
+    let file = fs::File::open(&target_path).map_err(|e| e.to_string())?;
+    let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
+    if extract_dir.exists() {
+        let _ = fs::remove_dir_all(&extract_dir);
+    }
+    fs::create_dir_all(&extract_dir).map_err(|e| e.to_string())?;
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+        let out_path = extract_dir.join(file.name());
+        if file.is_dir() {
+            fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            let mut outfile = fs::File::create(&out_path).map_err(|e| e.to_string())?;
+            std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+        }
+    }
+
+    let metadata = SaveMetadata {
+        game_id: summary.game_id.clone(),
+        emulator_id: summary.emulator_id.clone(),
+        timestamp: summary.timestamp,
+        version_id: summary.version_id.clone(),
+        file_list: summary.file_list.clone(),
+        hash: summary.hash.clone(),
+    };
+
+    history
+        .save_to_history(metadata, target_path.clone())
+        .map_err(|e| e.to_string())?;
+
+    let _ = app_handle.emit("sync://download-progress", 100u8);
+    let _ = app_handle.emit("sync://download-complete", version_id.clone());
+
+    Ok(())
+}
+
+fn calculate_sha256(path: &PathBuf) -> Result<String, std::io::Error> {
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)?;
+    let result = hasher.finalize();
+    Ok(format!("{:x}", result))
 }

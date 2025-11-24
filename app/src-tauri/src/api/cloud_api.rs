@@ -99,15 +99,7 @@ pub async fn list_devices(
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<Vec<CloudDevice>, String> {
-    let token = settings
-        .get_settings()
-        .map_err(|e| format!("Failed to load settings: {e}"))?
-        .cloud
-        .api_key;
-
-    if token.is_empty() {
-        return Err("Not logged in".into());
-    }
+    let token = ensure_api_key(&settings)?;
 
     let backend = cloud.lock().await;
     backend
@@ -122,15 +114,7 @@ pub async fn remove_device(
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<(), String> {
-    let token = settings
-        .get_settings()
-        .map_err(|e| format!("Failed to load settings: {e}"))?
-        .cloud
-        .api_key;
-
-    if token.is_empty() {
-        return Err("Not logged in".into());
-    }
+    let token = ensure_api_key(&settings)?;
 
     let backend = cloud.lock().await;
     backend
@@ -148,6 +132,9 @@ pub async fn list_cloud_versions(
     limit: Option<u32>,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
 ) -> Result<Vec<CloudVersionSummary>, String> {
+    if ensure_config(&cloud, None).await.is_err() {
+        return Err("Cloud not configured".into());
+    }
     let backend = cloud.lock().await;
     backend
         .list_versions(game_id, limit.map(|l| l as usize))
@@ -172,6 +159,10 @@ pub async fn download_cloud_version(
         .map_err(|e| format!("Failed to get app data dir: {e}"))?;
     let downloads_dir = app_data_dir.join("data").join("cloud_downloads");
     let target_path = downloads_dir.join(format!("{}_{}.zip", game_id, version_id));
+
+    if ensure_config(&cloud, Some(&app)).await.is_err() {
+        return Err("Cloud not configured".into());
+    }
 
     let backend = cloud.lock().await;
     let _ = app.emit("sync://download-progress", 0u8);
@@ -264,6 +255,33 @@ pub async fn get_cloud_status(
         device_id,
         connected,
     })
+}
+
+async fn ensure_config(
+    cloud: &State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    app: Option<&tauri::AppHandle>,
+) -> Result<(), String> {
+    let backend = cloud.lock().await;
+    if let Err(err) = backend.get_device_id() {
+        if let Some(app) = app {
+            let _ = app.emit("sync://offline", format!("config error: {err}"));
+        }
+        return Err(cloud_error_to_string(err));
+    }
+    Ok(())
+}
+
+fn ensure_api_key(settings: &State<'_, Arc<SettingsManager>>) -> Result<String, String> {
+    let token = settings
+        .get_settings()
+        .map_err(|e| format!("Failed to load settings: {e}"))?
+        .cloud
+        .api_key;
+
+    if token.is_empty() {
+        return Err("Not logged in".into());
+    }
+    Ok(token)
 }
 
 fn cloud_error_to_string(error: CloudError) -> String {
