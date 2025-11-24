@@ -105,12 +105,11 @@ pub fn run() {
                 tracing::warn!("[CLOUD] Failed to create cloud downloads dir: {e}");
             }
 
-            let cloud_backend = HttpCloudBackend::new(settings_arc.clone())
-                .unwrap_or_else(|err| {
-                    tracing::error!("[CLOUD] Failed to initialize HTTP backend: {err}");
-                    HttpCloudBackend::new(settings_arc.clone())
-                        .expect("Failed to init fallback http backend")
-                });
+            let cloud_backend = HttpCloudBackend::new(settings_arc.clone()).unwrap_or_else(|err| {
+                tracing::error!("[CLOUD] Failed to initialize HTTP backend: {err}");
+                HttpCloudBackend::new(settings_arc.clone())
+                    .expect("Failed to init fallback http backend")
+            });
             let cloud: Box<dyn CloudBackend + Send> = Box::new(cloud_backend);
 
             tracing::info!("[CLOUD] HTTP cloud backend initialized");

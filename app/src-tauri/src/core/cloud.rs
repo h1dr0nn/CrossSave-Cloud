@@ -230,7 +230,10 @@ impl CloudBackend for HttpCloudBackend {
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(CloudError::Unauthorized(format!("status {}", resp.status())));
+            return Err(CloudError::Unauthorized(format!(
+                "status {}",
+                resp.status()
+            )));
         }
 
         let parsed: LoginResponse = resp
@@ -306,7 +309,10 @@ impl CloudBackend for HttpCloudBackend {
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(CloudError::NetworkError(format!("upload failed: {}", resp.status())));
+            return Err(CloudError::NetworkError(format!(
+                "upload failed: {}",
+                resp.status()
+            )));
         }
 
         let parsed: CloudVersionSummary = resp

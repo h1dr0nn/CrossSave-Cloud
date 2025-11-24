@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { get } from "svelte/store";
   import { goto } from "$app/navigation";
   import AppHeader from "../layout/AppHeader.svelte";
   import {
@@ -8,6 +9,12 @@
     userEmail,
     isSyncing,
   } from "$lib/stores/cloudStore";
+  import type {
+    CloudDevice,
+    SyncStatus,
+    CloudVersion,
+  } from "$lib/stores/cloudStore";
+  import { pushError, pushInfo, pushSuccess } from "$lib/notifications";
 
   // Login state
   let email = "";
@@ -20,17 +27,35 @@
 
   // Device management
   let deviceId = "";
-  let mockDevices = [
-    { id: "current", name: "This Device", last_sync: new Date().toISOString() },
-  ];
+  let devices: CloudDevice[] = [];
 
   // Sync status
   const syncStatusStore = cloudStore.syncStatus;
   const cloudVersionsStore = cloudStore.cloudVersions;
+  const downloadStateStore = cloudStore.downloadState;
+  const onlineStatusStore = cloudStore.onlineStatus;
+  const devicesStore = cloudStore.devices;
 
-  let syncStatus: any = null;
-  let selectedVersions: any[] = [];
+  let syncStatus: SyncStatus | null = null;
+  let selectedVersions: CloudVersion[] = [];
   let syncMessage = "";
+  let downloadState: {
+    versionId: string | null;
+    progress: number;
+    status: "idle" | "downloading" | "completed" | "error";
+    path: string | null;
+    error: string | null;
+  } = {
+    versionId: null,
+    progress: 0,
+    status: "idle",
+    path: null,
+    error: null,
+  };
+  let onlineStatus = "online";
+  let hasLoadedAfterLogin = false;
+  let lastDownloadError = "";
+  let lastDownloadPath = "";
 
   // Cloud versions
   let selectedGame = "";
@@ -38,37 +63,78 @@
 
   $: syncStatus = $syncStatusStore;
   $: selectedVersions = $cloudVersionsStore.get(selectedGame) ?? [];
+  $: downloadState = $downloadStateStore;
+  $: onlineStatus = $onlineStatusStore;
+  $: devices = $devicesStore;
+
+  $: if ($isLoggedIn && !hasLoadedAfterLogin) {
+    hasLoadedAfterLogin = true;
+    initializeAfterLogin();
+  } else if (!$isLoggedIn) {
+    hasLoadedAfterLogin = false;
+  }
+
+  $: if (
+    downloadState.status === "completed" &&
+    downloadState.path &&
+    downloadState.path !== lastDownloadPath
+  ) {
+    pushSuccess(`Download complete (${downloadState.versionId ?? ""})`);
+    lastDownloadPath = downloadState.path;
+    if (selectedGame) {
+      loadCloudVersions();
+    }
+  }
+
+  $: if (
+    downloadState.status === "error" &&
+    downloadState.error &&
+    downloadState.error !== lastDownloadError
+  ) {
+    pushError(`Download failed: ${downloadState.error}`);
+    lastDownloadError = downloadState.error;
+  }
 
   onMount(async () => {
-    // Load initial data if logged in
-    if ($isLoggedIn) {
-      await loadCloudStatus();
-      await loadSyncStatus();
+    await cloudStore.initialize();
+    if (get(isLoggedIn)) {
+      await initializeAfterLogin();
     }
   });
 
+  async function initializeAfterLogin() {
+    await loadCloudStatus();
+    await loadSyncStatus();
+    await refreshDevices();
+  }
+
   async function handleLogin() {
     loginError = "";
-    const success = await cloudStore.login(email, password);
-    if (success) {
-      await loadCloudStatus();
-      await loadSyncStatus();
+    const result = await cloudStore.login(email, password);
+    if (result.success) {
+      await initializeAfterLogin();
     } else {
-      loginError = "Invalid credentials";
+      loginError = result.error ?? "Invalid credentials";
     }
   }
 
   async function handleLogout() {
     await cloudStore.logout();
     deviceId = "";
+    devices = [];
   }
 
   async function loadCloudStatus() {
     try {
       const status = await cloudStore.getCloudStatus();
       deviceId = status.device_id;
+      onlineStatus = status.connected ? "online" : "offline";
     } catch (error) {
-      console.error("Failed to load cloud status:", error);
+      loginError =
+        typeof error === "string"
+          ? error
+          : "Failed to load cloud status";
+      pushError(loginError);
     }
   }
 
@@ -85,7 +151,7 @@
       syncMessage = "Syncing...";
       await cloudStore.forceSyncNow();
       await loadSyncStatus();
-      syncMessage = "Sync completed successfully!";
+      syncMessage = "Sync started";
       setTimeout(() => (syncMessage = ""), 3000);
     } catch (error) {
       syncMessage = "Sync failed: " + error;
@@ -106,6 +172,24 @@
     }
   }
 
+  async function refreshDevices() {
+    try {
+      await cloudStore.listDevices();
+    } catch (error) {
+      pushError("Failed to load devices");
+    }
+  }
+
+  async function removeDevice(device: CloudDevice) {
+    if (!confirm(`Remove device ${device.name}?`)) return;
+    try {
+      await cloudStore.removeDevice(device.device_id);
+      pushSuccess("Device removed");
+    } catch (error) {
+      pushError(`Failed to remove device: ${error}`);
+    }
+  }
+
   async function loadCloudVersions() {
     if (!selectedGame) return;
 
@@ -114,6 +198,7 @@
       await cloudStore.listCloudVersions(selectedGame, 10);
     } catch (error) {
       console.error("Failed to load cloud versions:", error);
+      pushError("Failed to load cloud versions");
     } finally {
       loadingVersions = false;
     }
@@ -121,13 +206,10 @@
 
   async function handleDownload(versionId: string) {
     try {
-      const path = await cloudStore.downloadCloudVersion(
-        selectedGame,
-        versionId,
-      );
-      alert(`Downloaded to: ${path}`);
+      await cloudStore.downloadCloudVersion(selectedGame, versionId);
+      pushInfo("Download started");
     } catch (error) {
-      alert("Download failed: " + error);
+      pushError("Download failed: " + error);
     }
   }
 
@@ -195,9 +277,9 @@
                     </div>
                   </div>
 
-                  {#if loginError}
-                    <p class="error">{loginError}</p>
-                  {/if}
+                {#if loginError}
+                  <p class="error">{loginError}</p>
+                {/if}
 
                   <div class="form-actions">
                     <button type="submit" class="btn-primary btn-full">
@@ -205,11 +287,6 @@
                     </button>
                   </div>
                 </form>
-
-                <p class="note">
-                  <strong>Note:</strong> This is a mock login for development. Any
-                  email/password will work.
-                </p>
               </div>
             </div>
           </div>
@@ -235,9 +312,17 @@
                   </div>
                   <div class="setting-content">
                     <p class="setting-label">Logged in as</p>
-                    <p class="setting-value">{$userEmail}</p>
+                    <p class="setting-value">{$userEmail || "Cloud account"}</p>
+                    <p class="setting-meta">Device ID: {deviceId || "Unknown"}</p>
                   </div>
                 </div>
+                <span
+                  class:offline={onlineStatus === "offline"}
+                  class="status-pill"
+                  aria-live="polite"
+                >
+                  {onlineStatus === "online" ? "Online" : "Offline"}
+                </span>
                 <button class="btn-secondary btn-small" on:click={handleLogout}>
                   Logout
                 </button>
@@ -259,6 +344,14 @@
                       <span class="value">{syncStatus.queue_length}</span>
                     </div>
                     <div class="status-item">
+                      <span class="label">Connection</span>
+                      <span
+                        class={`value ${onlineStatus === "online" ? "syncing" : "idle"}`}
+                      >
+                        {onlineStatus === "online" ? "Online" : "Offline"}
+                      </span>
+                    </div>
+                    <div class="status-item">
                       <span class="label">Status</span>
                       <span class="value {$isSyncing ? 'syncing' : 'idle'}">
                         {$isSyncing ? "Syncing..." : "Idle"}
@@ -272,6 +365,31 @@
                       ).toLocaleString()}
                     </p>
                   {/if}
+                {/if}
+
+                {#if syncStatus?.active_job}
+                  <div class="active-job">
+                    <div>
+                      <p class="label">Uploading</p>
+                      <p class="mono">{syncStatus.active_job.version_id}</p>
+                    </div>
+                    <p class="hint">Game: {syncStatus.active_job.game_id}</p>
+                  </div>
+                {/if}
+
+                {#if downloadState.status !== "idle" && downloadState.versionId}
+                  <div class="progress-wrapper">
+                    <div class="progress-header">
+                      <span class="label">Download</span>
+                      <span class="mono">{downloadState.versionId}</span>
+                    </div>
+                    <div class="progress-bar">
+                      <span style={`width: ${downloadState.progress}%`}></span>
+                    </div>
+                    {#if downloadState.error}
+                      <p class="error-text">{downloadState.error}</p>
+                    {/if}
+                  </div>
                 {/if}
 
                 {#if syncMessage}
@@ -315,22 +433,33 @@
 
                 <p class="subsection-title">Registered Devices</p>
                 <div class="devices-list">
-                  {#each mockDevices as device}
-                    <div class="device-item">
-                      <div class="device-details">
-                        <strong>{device.name}</strong>
-                        <span class="device-meta"
-                          >Last sync: {new Date(
-                            device.last_sync,
-                          ).toLocaleString()}</span
-                        >
+                  {#if devices.length === 0}
+                    <p class="empty">No registered devices yet</p>
+                  {:else}
+                    {#each devices as device}
+                      <div class="device-item">
+                        <div class="device-details">
+                          <strong>{device.name}</strong>
+                          <span class="device-meta"
+                            >Last sync: {new Date(
+                              (device.last_sync || 0) * 1000,
+                            ).toLocaleString()}</span
+                          >
+                          <span class="device-meta mono"
+                            >ID: {device.device_id.substring(0, 10)}...</span
+                          >
+                        </div>
+                        <div class="device-actions">
+                          <button
+                            class="btn-danger btn-small"
+                            on:click={() => removeDevice(device)}
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </div>
-                      <div class="device-actions">
-                        <button class="btn-secondary btn-small">Rename</button>
-                        <button class="btn-danger btn-small">Remove</button>
-                      </div>
-                    </div>
-                  {/each}
+                    {/each}
+                  {/if}
                 </div>
               </div>
             </div>
@@ -379,15 +508,35 @@
                             >
                           </div>
                           <div class="version-meta">
-                            <span>{formatBytes(version.size_bytes)}</span>
-                            <span class="separator">•</span>
                             <span
-                              >Device: {version.device_id.substring(
-                                0,
-                                8,
-                              )}...</span
+                              >{formatBytes(
+                                version.total_size_bytes ?? version.size_bytes,
+                              )}</span
+                            >
+                            <span class="separator">•</span>
+                            <span class="mono"
+                              >Hash: {version.hash.substring(0, 10)}...</span
                             >
                           </div>
+                          <div class="version-meta">
+                            <span
+                              >Device: {version.device_id.substring(0, 8)}...</span
+                            >
+                            <span class="separator">•</span>
+                            <span
+                              >Files: {version.file_list?.length ?? 0}</span
+                            >
+                          </div>
+                          {#if downloadState.versionId === version.version_id}
+                            <div class="progress-bar small">
+                              <span
+                                style={`width: ${downloadState.progress}%`}
+                              ></span>
+                            </div>
+                            {#if downloadState.error}
+                              <p class="error-text">{downloadState.error}</p>
+                            {/if}
+                          {/if}
                         </div>
                         <button
                           class="btn-secondary btn-small"
@@ -841,6 +990,78 @@
     font-size: 0.85rem;
     color: var(--text-secondary);
     border: 1px solid var(--border);
+  }
+
+  .status-pill {
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface-muted);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    margin-right: 12px;
+  }
+
+  .status-pill.offline {
+    background: color-mix(in srgb, var(--danger) 15%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+    color: var(--danger);
+  }
+
+  .setting-meta {
+    margin: 2px 0 0;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+  }
+
+  .mono {
+    font-family: "SF Mono", "Monaco", "Courier New", monospace;
+  }
+
+  .active-job {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+  }
+
+  .progress-wrapper {
+    margin-top: 12px;
+    display: grid;
+    gap: 6px;
+  }
+
+  .progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-secondary);
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .progress-bar.small {
+    height: 6px;
+  }
+
+  .progress-bar span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.2s ease;
+  }
+
+  .error-text {
+    color: var(--danger);
+    margin: 6px 0 0;
+    font-size: 0.9rem;
   }
 
   .loading,

@@ -1,23 +1,22 @@
-import { writable, derived } from 'svelte/store';
+import { derived, writable } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-// Authentication state
 interface AuthState {
     isLoggedIn: boolean;
     email: string | null;
+    token: string | null;
+    deviceId: string | null;
 }
 
-// Sync status from backend
-interface SyncStatus {
+export interface SyncStatus {
     queue_length: number;
     active_job: any | null;
     last_sync: string | null;
     is_syncing: boolean;
 }
 
-// Cloud version summary
-interface CloudVersion {
+export interface CloudVersion {
     game_id: string;
     emulator_id: string;
     version_id: string;
@@ -25,12 +24,36 @@ interface CloudVersion {
     size_bytes: number;
     hash: string;
     device_id: string;
+    total_size_bytes?: number;
+    file_list?: string[];
 }
 
-// Create stores
+export interface CloudDevice {
+    device_id: string;
+    name: string;
+    last_sync: number;
+}
+
+interface LoginResult {
+    token: string;
+    device_id: string;
+}
+
+type DownloadPhase = 'idle' | 'downloading' | 'completed' | 'error';
+
+interface DownloadState {
+    versionId: string | null;
+    progress: number;
+    status: DownloadPhase;
+    path: string | null;
+    error: string | null;
+}
+
 const authState = writable<AuthState>({
     isLoggedIn: false,
-    email: null
+    email: null,
+    token: null,
+    deviceId: null
 });
 
 const syncStatus = writable<SyncStatus>({
@@ -41,66 +64,146 @@ const syncStatus = writable<SyncStatus>({
 });
 
 const cloudVersions = writable<Map<string, CloudVersion[]>>(new Map());
+const downloadState = writable<DownloadState>({
+    versionId: null,
+    progress: 0,
+    status: 'idle',
+    path: null,
+    error: null
+});
+const onlineStatus = writable<'online' | 'offline'>('online');
+const devices = writable<CloudDevice[]>([]);
 
-// Listen to sync status events from backend
-if (typeof window !== 'undefined') {
-    listen<SyncStatus>('sync://status', (event) => {
-        syncStatus.set(event.payload);
-    }).catch(console.error);
+const listeners: Promise<UnlistenFn>[] = [];
+
+function bindEvents() {
+    if (typeof window === 'undefined') return;
+    if (listeners.length > 0) return;
+
+    listeners.push(
+        listen<SyncStatus>('sync://status', (event) => {
+            syncStatus.set(event.payload);
+        }),
+        listen<{ version_id: string; progress: number }>(
+            'sync://download-progress',
+            (event) => {
+                const payload = event.payload;
+                downloadState.set({
+                    versionId: payload.version_id,
+                    progress: payload.progress,
+                    status: 'downloading',
+                    path: null,
+                    error: null
+                });
+            }
+        ),
+        listen<{ version_id: string; path: string }>('sync://download-complete', (event) => {
+            const payload = event.payload;
+            downloadState.set({
+                versionId: payload.version_id,
+                progress: 100,
+                status: 'completed',
+                path: payload.path,
+                error: null
+            });
+        }),
+        listen<{ version_id: string; message: string }>('sync://download-error', (event) => {
+            const payload = event.payload;
+            downloadState.set({
+                versionId: payload.version_id,
+                progress: 0,
+                status: 'error',
+                path: null,
+                error: payload.message
+            });
+        }),
+        listen('sync://online', () => onlineStatus.set('online')),
+        listen('sync://offline', () => onlineStatus.set('offline'))
+    );
 }
 
-// Actions
+async function persistEmail(email: string) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('cloud:lastEmail', email);
+}
+
+function loadPersistedEmail(): string | null {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('cloud:lastEmail');
+}
+
 export const cloudStore = {
-    // Subscribe to stores
     auth: { subscribe: authState.subscribe },
     syncStatus: { subscribe: syncStatus.subscribe },
     cloudVersions: { subscribe: cloudVersions.subscribe },
+    downloadState: { subscribe: downloadState.subscribe },
+    onlineStatus: { subscribe: onlineStatus.subscribe },
+    devices: { subscribe: devices.subscribe },
 
-    // Auth actions
-    async login(email: string, password: string): Promise<boolean> {
-        // Mock login for now
-        if (email && password) {
-            authState.set({ isLoggedIn: true, email });
-
-            // Enable cloud sync in backend
-            try {
-                const settings = await invoke<any>('get_app_settings');
-                settings.cloud.enabled = true;
-                await invoke('update_app_settings', {
-                    history: null, // Not updating history settings
-                    settings
+    async initialize(): Promise<void> {
+        bindEvents();
+        try {
+            const config = await invoke<any>('get_cloud_config');
+            if (config?.enabled && config?.api_key) {
+                authState.set({
+                    isLoggedIn: true,
+                    email: loadPersistedEmail(),
+                    token: config.api_key,
+                    deviceId: config.device_id ?? null
                 });
-            } catch (error) {
-                console.error('Failed to update cloud settings:', error);
             }
-
-            return true;
+        } catch (error) {
+            console.error('Failed to hydrate cloud auth state', error);
         }
-        return false;
+    },
+
+    async login(email: string, password: string): Promise<{ success: boolean; error?: string }> {
+        bindEvents();
+        try {
+            const result = await invoke<LoginResult>('login_cloud', { email, password });
+            await persistEmail(email);
+            authState.set({
+                isLoggedIn: true,
+                email,
+                token: result.token,
+                deviceId: result.device_id
+            });
+            await this.listDevices();
+            return { success: true };
+        } catch (error: unknown) {
+            const message = typeof error === 'string' ? error : (error as Error)?.message ?? 'Login failed';
+            authState.set({ isLoggedIn: false, email: null, token: null, deviceId: null });
+            return { success: false, error: message };
+        }
     },
 
     async logout(): Promise<void> {
-        authState.set({ isLoggedIn: false, email: null });
-
-        // Disable cloud sync in backend
         try {
-            const settings = await invoke<any>('get_app_settings');
-            settings.cloud.enabled = false;
-            await invoke('update_app_settings', {
-                history: null,
-                settings
-            });
+            await invoke('logout_cloud');
         } catch (error) {
-            console.error('Failed to update cloud settings:', error);
+            console.error('Failed to logout from cloud', error);
         }
+        authState.set({ isLoggedIn: false, email: null, token: null, deviceId: null });
     },
 
-    // Sync actions
+    async listDevices(): Promise<CloudDevice[]> {
+        bindEvents();
+        const result = await invoke<CloudDevice[]>('list_devices');
+        devices.set(result);
+        return result;
+    },
+
+    async removeDevice(deviceId: string): Promise<void> {
+        await invoke('remove_device', { device_id: deviceId });
+        await this.listDevices();
+    },
+
     async forceSyncNow(): Promise<void> {
         await invoke('force_sync_now');
     },
 
     async getSyncStatus(): Promise<SyncStatus> {
+        bindEvents();
         const status = await invoke<SyncStatus>('get_sync_status');
         syncStatus.set(status);
         return status;
@@ -110,14 +213,14 @@ export const cloudStore = {
         await invoke('clear_sync_queue');
     },
 
-    // Cloud version actions
     async listCloudVersions(gameId: string, limit?: number): Promise<CloudVersion[]> {
+        bindEvents();
         const versions = await invoke<CloudVersion[]>('list_cloud_versions', {
             gameId,
             limit
         });
 
-        cloudVersions.update(map => {
+        cloudVersions.update((map) => {
             map.set(gameId, versions);
             return map;
         });
@@ -126,13 +229,34 @@ export const cloudStore = {
     },
 
     async downloadCloudVersion(gameId: string, versionId: string): Promise<string> {
-        return await invoke<string>('download_cloud_version', {
-            gameId,
-            versionId
+        bindEvents();
+        downloadState.set({
+            versionId,
+            progress: 0,
+            status: 'downloading',
+            path: null,
+            error: null
         });
+        try {
+            return await invoke<string>('download_cloud_version', {
+                gameId,
+                versionId
+            });
+        } catch (error: unknown) {
+            const message = typeof error === 'string' ? error : (error as Error)?.message ?? 'Download failed';
+            downloadState.set({
+                versionId,
+                progress: 0,
+                status: 'error',
+                path: null,
+                error: message
+            });
+            throw message;
+        }
     },
 
     async uploadCloudSave(gameId: string, emulatorId: string, localVersionId: string): Promise<any> {
+        bindEvents();
         return await invoke('upload_cloud_save', {
             gameId,
             emulatorId,
@@ -140,7 +264,6 @@ export const cloudStore = {
         });
     },
 
-    // Cloud config actions
     async getCloudConfig(): Promise<any> {
         return await invoke('get_cloud_config');
     },
@@ -150,11 +273,22 @@ export const cloudStore = {
     },
 
     async getCloudStatus(): Promise<any> {
-        return await invoke('get_cloud_status');
+        const status = await invoke<any>('get_cloud_status');
+        onlineStatus.set(status.connected ? 'online' : 'offline');
+        if (status.connected && status.device_id) {
+            authState.update((state) => ({
+                ...state,
+                isLoggedIn: true,
+                deviceId: status.device_id,
+                email: state.email ?? loadPersistedEmail(),
+                token: state.token
+            }));
+        }
+        return status;
     }
 };
 
-// Derived stores
-export const isSyncing = derived(syncStatus, $status => $status.is_syncing);
-export const isLoggedIn = derived(authState, $auth => $auth.isLoggedIn);
-export const userEmail = derived(authState, $auth => $auth.email);
+export const isSyncing = derived(syncStatus, ($status) => $status.is_syncing);
+export const isLoggedIn = derived(authState, ($auth) => $auth.isLoggedIn);
+export const userEmail = derived(authState, ($auth) => $auth.email);
+export const online = derived(onlineStatus, ($status) => $status === 'online');
