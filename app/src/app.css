@@ -17,6 +17,18 @@ body {
   --radius-lg: 24px;
   --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.05);
   --shadow-strong: 0 18px 42px rgba(0, 0, 0, 0.12);
+  --text-primary: var(--text);
+  --text-secondary: var(--muted);
+  --text-strong: var(--text);
+  --text-light: var(--muted);
+  --bg-primary: var(--surface);
+  --bg-secondary: var(--surface-muted);
+  --bg-hover: color-mix(in srgb, var(--surface-muted) 70%, transparent);
+  --border-color: var(--border);
+  --accent-color: var(--accent);
+  --accent-hover: var(--accent-strong);
+  --danger: #ef4444;
+  --danger-dark: #dc2626;
 }
 
 body[data-theme="light"] {

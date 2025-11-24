@@ -42,6 +42,8 @@ export interface AppSettings {
 export interface StorageInfo {
   history_path: string;
   size_bytes: number;
+  total_size_bytes: number;
+  total_versions: number;
   retention_bounds: [number, number];
 }
 
@@ -157,3 +159,8 @@ export function checkPathStatus(emulatorId: string): Promise<PathStatus[]> {
 export function openFolder(path: string): Promise<void> {
   return invoke("open_folder", { path });
 }
+
+export function selectDirectory(): Promise<string | null> {
+  return invoke("select_directory");
+}
+

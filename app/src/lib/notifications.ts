@@ -1,6 +1,6 @@
 import { writable } from "svelte/store";
 
-type NotificationLevel = "info" | "error";
+type NotificationLevel = "info" | "error" | "success";
 
 export interface NotificationEntry {
   id: number;
@@ -22,6 +22,10 @@ export function pushNotification(level: NotificationLevel, message: string) {
   };
 
   notifications.update((current) => [entry, ...current].slice(0, 100));
+
+  setTimeout(() => {
+    dismissNotification(entry.id);
+  }, 3000);
 }
 
 export function pushError(message: string) {
@@ -30,6 +34,10 @@ export function pushError(message: string) {
 
 export function pushInfo(message: string) {
   pushNotification("info", message);
+}
+
+export function pushSuccess(message: string) {
+  pushNotification("success", message);
 }
 
 export function dismissNotification(id: number) {
