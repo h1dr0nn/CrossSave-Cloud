@@ -438,12 +438,17 @@ export const cloudStore = {
 
     async validateOfficialCloudSettings(config?: CloudConfig): Promise<CloudValidationResult> {
         bindEvents();
-        const payload = config ?? get(cloudConfig);
-        const defaultResult: CloudValidationResult = { status: 'invalid', message: 'Missing configuration' };
-        if (!payload) {
-            validationResult.set(defaultResult);
-            return defaultResult;
-        }
+        const current = get(cloudConfig);
+        // Ensure all required fields are present by merging with defaults and current config
+        const payload = {
+            enabled: false,
+            base_url: '',
+            api_key: '',
+            device_id: '',
+            timeout_seconds: 30,
+            ...current,
+            ...config
+        };
 
         try {
             await invoke<void>('validate_official_cloud_settings', { newConfig: payload });

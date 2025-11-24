@@ -210,11 +210,7 @@ impl HttpCloudBackend {
             .build()
             .map_err(|e| CloudError::InvalidConfig(format!("client build failed: {e}")))?;
 
-        let log_tag = match mode {
-            CloudMode::Official => "[CLOUD_OFFICIAL]",
-            CloudMode::SelfHost => "[CLOUD_SELF_HOST]",
-            CloudMode::Off => "[CLOUD_DISABLED]",
-        };
+        let log_tag = log_tag(&mode);
 
         Ok(Self {
             client,
@@ -621,4 +617,12 @@ fn calculate_sha256(path: &PathBuf) -> Result<String, CloudError> {
     std::io::copy(&mut file, &mut hasher).map_err(|e| CloudError::Io(e.to_string()))?;
     let result = hasher.finalize();
     Ok(format!("{:x}", result))
+}
+
+pub fn log_tag(mode: &CloudMode) -> &'static str {
+    match mode {
+        CloudMode::Official => "[CLOUD_OFFICIAL]",
+        CloudMode::SelfHost => "[CLOUD_SELF_HOST]",
+        CloudMode::Off => "[CLOUD_DISABLED]",
+    }
 }

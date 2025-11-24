@@ -7,11 +7,11 @@ use reqwest::Client;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::core::cloud::{CloudBackend, CloudDevice, CloudError, CloudVersionSummary};
+use crate::core::cloud::{log_tag, CloudBackend, CloudDevice, CloudError, CloudVersionSummary};
 use crate::core::history::HistoryManager;
 use crate::core::settings::{CloudMode, CloudSettings, SelfHostSettings, SettingsManager};
 use crate::core::sync::SyncManager;
-use crate::{mode_log_tag, switch_cloud_backend};
+use crate::switch_cloud_backend;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CloudStatus {
@@ -299,7 +299,7 @@ pub async fn update_cloud_mode(
     sync: State<'_, SyncManager>,
 ) -> Result<CloudMode, String> {
     let parsed_mode = parse_cloud_mode(&new_mode)?;
-    let tag = mode_log_tag(&parsed_mode);
+    let tag = log_tag(&parsed_mode);
     tracing::info!("{tag} Requested cloud mode update to {:?}", parsed_mode);
 
     let mut app_settings = settings_manager
@@ -596,7 +596,7 @@ async fn validate_self_host_config(
     settings: &SelfHostSettings,
     emit_validation_events: bool,
 ) -> Result<(), String> {
-    let tag = mode_log_tag(&CloudMode::SelfHost);
+    let tag = log_tag(&CloudMode::SelfHost);
     tracing::debug!("{tag} Validating self-hosted cloud settings");
 
     let id_server = settings.id_server.trim();
@@ -697,7 +697,7 @@ async fn validate_official_config(
     settings: &CloudSettings,
     emit_validation_events: bool,
 ) -> Result<(), String> {
-    let tag = mode_log_tag(&CloudMode::Official);
+    let tag = log_tag(&CloudMode::Official);
     tracing::debug!("{tag} Validating official cloud settings");
 
     let base_url = settings.base_url.trim();

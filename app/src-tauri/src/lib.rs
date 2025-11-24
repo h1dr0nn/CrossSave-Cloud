@@ -16,7 +16,7 @@ use api::settings_api::{
 };
 use api::sync_api::{clear_sync_queue, force_sync_now, get_sync_status};
 use api::watcher_api::{start_watcher, stop_watcher};
-use core::cloud::{CloudBackend, CloudError, DisabledCloudBackend, HttpCloudBackend};
+use core::cloud::{log_tag, CloudBackend, CloudError, DisabledCloudBackend, HttpCloudBackend};
 use core::history::HistoryManager;
 use core::profile::ProfileManager;
 use core::settings::{AppSettings, CloudMode, SettingsManager};
@@ -123,7 +123,7 @@ pub fn run() {
                 tracing::error!("[CLOUD] Failed to initialize cloud backend: {err}");
             }
 
-            tracing::info!("[CLOUD] Cloud backend initialized");
+            tracing::info!("{} Cloud backend initialized", log_tag(&current_settings.cloud_mode));
 
             // Register state
             let history_arc = Arc::new(history_manager);
@@ -199,7 +199,7 @@ pub(crate) async fn switch_cloud_backend(
     mode: CloudMode,
     settings: AppSettings,
 ) -> Result<(), CloudError> {
-    let tag = mode_log_tag(&mode);
+    let tag = log_tag(&mode);
     tracing::debug!("{tag} Switching backend to {:?}", mode);
 
     let backend: Box<dyn CloudBackend + Send> = match mode {
@@ -237,13 +237,7 @@ pub(crate) async fn switch_cloud_backend(
     Ok(())
 }
 
-pub(crate) fn mode_log_tag(mode: &CloudMode) -> &'static str {
-    match mode {
-        CloudMode::Official => "[CLOUD_OFFICIAL]",
-        CloudMode::SelfHost => "[CLOUD_SELF_HOST]",
-        CloudMode::Off => "[CLOUD_DISABLED]",
-    }
-}
+
 
 fn default_profile_dirs_for_app(app: &tauri::App) -> (PathBuf, PathBuf) {
     let app_data_dir = app

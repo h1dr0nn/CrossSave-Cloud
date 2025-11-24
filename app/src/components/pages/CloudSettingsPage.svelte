@@ -709,7 +709,15 @@
   }
 
   .segmented.nowrap {
+    display: flex;
     white-space: nowrap;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .segmented.nowrap button {
+    flex-shrink: 0;
   }
 
   .segmented button {

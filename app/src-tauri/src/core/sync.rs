@@ -16,7 +16,7 @@ use tokio::sync::{Mutex, Notify};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
-use crate::core::cloud::{CloudBackend, CloudVersionSummary};
+use crate::core::cloud::{log_tag, CloudBackend, CloudVersionSummary};
 use crate::core::history::{HistoryEntry, HistoryManager};
 use crate::core::packager::SaveMetadata;
 use crate::core::settings::SettingsManager;
@@ -244,7 +244,11 @@ impl UploadQueue {
         let _ = self.app_handle.emit("sync://status", status);
     }
 
-    pub async fn process_queue(&self, cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>) {
+    pub async fn process_queue(
+        &self,
+        cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>,
+        settings: Arc<SettingsManager>,
+    ) {
         loop {
             if !self.online_status.load(Ordering::SeqCst) {
                 self.wait_for_online().await;
@@ -269,7 +273,13 @@ impl UploadQueue {
                 }
                 self.emit_status().await;
 
-                info!("[SYNC] Starting upload for {}", job.game_id);
+                let mode = settings
+                    .get_settings()
+                    .map(|s| s.cloud_mode)
+                    .unwrap_or(crate::core::settings::CloudMode::Off);
+                let tag = log_tag(&mode);
+
+                info!("{} [SYNC] Starting upload for {}", tag, job.game_id);
 
                 job.status = UploadStatus::Uploading;
                 self.save_to_disk().await;
@@ -279,21 +289,21 @@ impl UploadQueue {
 
                 match result {
                     Ok(_) => {
-                        info!("[SYNC] Upload complete for {}", job.game_id);
+                        info!("{} [SYNC] Upload complete for {}", tag, job.game_id);
                         job.status = UploadStatus::Completed;
                     }
                     Err(e) => {
-                        error!("[SYNC] Upload failed for {}: {}", job.game_id, e);
+                        error!("{} [SYNC] Upload failed for {}: {}", tag, job.game_id, e);
                         if job.retries < 3 {
                             job.retries += 1;
                             let retries = job.retries;
-                            warn!("[SYNC] Retrying job (attempt {})", retries);
+                            warn!("{} [SYNC] Retrying job (attempt {})", tag, retries);
                             let mut q = self.queue.lock().await;
                             q.push_front(job); // Put back at front
                             sleep(Duration::from_secs(2u64.pow(retries))).await;
                         // Exponential backoff
                         } else {
-                            error!("[SYNC] Job failed after 3 retries, dropping.");
+                            error!("{} [SYNC] Job failed after 3 retries, dropping.", tag);
                             job.status = UploadStatus::Failed;
                         }
                     }
@@ -388,9 +398,11 @@ impl SyncManager {
         let queue_for_online = self.queue.clone();
         let trigger_for_online = self.sync_trigger.clone();
 
+        let settings_for_queue = self.settings.clone();
+
         // Spawn Queue Processor
         tokio::spawn(async move {
-            queue.process_queue(cloud).await;
+            queue.process_queue(cloud, settings_for_queue).await;
         });
 
         // Connectivity monitor
@@ -433,30 +445,33 @@ impl SyncManager {
                 tokio::select! {
                     _ = sleep(Duration::from_secs(10)) => {},
                     _ = sync_trigger.notified() => {
-                        info!("[SYNC] Manual sync triggered");
+                        // We can't easily get tag here without settings, but we'll get it below
                     }
                 }
 
                 // Check if sync is enabled
-                let enabled = settings_clone
+                let (enabled, mode) = settings_clone
                     .get_settings()
-                    .map(|s| s.cloud.enabled)
-                    .unwrap_or(false);
+                    .map(|s| (s.cloud.enabled, s.cloud_mode))
+                    .unwrap_or((false, crate::core::settings::CloudMode::Off));
+                
+                let tag = log_tag(&mode);
+
                 if !enabled {
                     continue;
                 }
 
                 if paused_flag.load(Ordering::SeqCst) {
-                    info!("[SYNC] Sync paused; skipping cycle");
+                    info!("{} [SYNC] Sync paused; skipping cycle", tag);
                     continue;
                 }
 
                 if !online_status.load(Ordering::SeqCst) {
-                    info!("[SYNC] Skipping sync cycle while offline");
+                    info!("{} [SYNC] Skipping sync cycle while offline", tag);
                     continue;
                 }
 
-                info!("[SYNC] Starting sync cycle...");
+                info!("{} [SYNC] Starting sync cycle...", tag);
 
                 // 1. List all games from History
                 let games = history_clone.get_games();
@@ -487,7 +502,7 @@ impl SyncManager {
                     match decision {
                         SyncDecision::Upload => {
                             if let Some(local) = local_latest {
-                                info!("[SYNC] Queueing upload for {}", game_id);
+                                info!("{} [SYNC] Queueing upload for {}", tag, game_id);
                                 queue_clone
                                     .add_job(UploadJob {
                                         game_id: game_id.clone(),
@@ -511,7 +526,7 @@ impl SyncManager {
                             }
                         }
                         SyncDecision::Download(version_id) => {
-                            info!("[SYNC] Should download {} version {}", game_id, version_id);
+                            info!("{} [SYNC] Should download {} version {}", tag, game_id, version_id);
                             if let Err(err) = perform_download(
                                 cloud_clone.clone(),
                                 history_clone.clone(),
@@ -521,11 +536,11 @@ impl SyncManager {
                             )
                             .await
                             {
-                                warn!("[SYNC] Download failed: {}", err);
+                                warn!("{} [SYNC] Download failed: {}", tag, err);
                             }
                         }
                         SyncDecision::Conflict => {
-                            warn!("[SYNC] Conflict detected for {}", game_id);
+                            warn!("{} [SYNC] Conflict detected for {}", tag, game_id);
                             let _ = app_handle_clone.emit("sync://conflict-detected", game_id);
                         }
                         SyncDecision::Noop => {}
