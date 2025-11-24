@@ -99,6 +99,14 @@
         },
       };
       pushInfo(`Profile ${profile.emulator_id} validated`);
+
+      // Auto-clear validation after 5 seconds
+      setTimeout(() => {
+        validation = {
+          ...validation,
+          [profile.emulator_id]: undefined,
+        };
+      }, 5000);
     } catch (error) {
       validation = {
         ...validation,
@@ -109,6 +117,14 @@
         },
       };
       pushError(`Validation failed for ${profile.emulator_id}: ${error}`);
+
+      // Auto-clear error validation after 5 seconds
+      setTimeout(() => {
+        validation = {
+          ...validation,
+          [profile.emulator_id]: undefined,
+        };
+      }, 5000);
     }
   }
 </script>
