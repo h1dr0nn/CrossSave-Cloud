@@ -4,7 +4,7 @@ mod core;
 use api::cloud_api::{
     download_cloud_version, get_cloud_config, get_cloud_status, list_cloud_versions, list_devices,
     login_cloud, logout_cloud, remove_device, update_cloud_config, update_cloud_mode,
-    upload_cloud_save,
+    upload_cloud_save, validate_official_cloud_settings, validate_self_host_settings,
 };
 use api::explorer_api::{check_path_status, open_folder, scan_save_files};
 use api::history_api::{delete_history_item, get_history_item, list_history, rollback_version};
@@ -15,9 +15,7 @@ use api::settings_api::{
 };
 use api::sync_api::{clear_sync_queue, force_sync_now, get_sync_status};
 use api::watcher_api::{start_watcher, stop_watcher};
-use core::cloud::{
-    CloudBackend, CloudError, DisabledCloudBackend, HttpCloudBackend, SelfHostHttpBackend,
-};
+use core::cloud::{CloudBackend, CloudError, DisabledCloudBackend, HttpCloudBackend};
 use core::history::HistoryManager;
 use core::profile::ProfileManager;
 use core::settings::{AppSettings, CloudMode, SettingsManager};
@@ -176,6 +174,8 @@ pub fn run() {
             download_cloud_version,
             get_cloud_config,
             update_cloud_config,
+            validate_official_cloud_settings,
+            validate_self_host_settings,
             get_cloud_status,
             login_cloud,
             logout_cloud,
@@ -203,11 +203,17 @@ pub(crate) async fn switch_cloud_backend(
     let backend: Box<dyn CloudBackend + Send> = match mode {
         CloudMode::Official => {
             tracing::info!("{tag} Preparing official cloud backend");
-            Box::new(HttpCloudBackend::new(settings_manager.clone())?)
+            Box::new(HttpCloudBackend::new(
+                settings_manager.clone(),
+                CloudMode::Official,
+            )?)
         }
         CloudMode::SelfHost => {
             tracing::info!("{tag} Preparing self-hosted cloud backend");
-            Box::new(SelfHostHttpBackend::new(settings_manager.clone())?)
+            Box::new(HttpCloudBackend::new(
+                settings_manager.clone(),
+                CloudMode::SelfHost,
+            )?)
         }
         CloudMode::Off => {
             tracing::info!("{tag} Disabling cloud backend");

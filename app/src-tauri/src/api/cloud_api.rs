@@ -9,7 +9,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::core::cloud::{CloudBackend, CloudDevice, CloudError, CloudVersionSummary};
 use crate::core::history::HistoryManager;
-use crate::core::settings::{CloudMode, CloudSettings, SettingsManager};
+use crate::core::settings::{CloudMode, CloudSettings, SelfHostSettings, SettingsManager};
 use crate::{mode_log_tag, switch_cloud_backend};
 
 #[derive(Clone, Debug, Serialize)]
@@ -202,8 +202,16 @@ pub async fn download_cloud_version(
     let downloads_dir = app_data_dir.join("data").join("cloud_downloads");
     let target_path = downloads_dir.join(format!("{}_{}.zip", game_id, version_id));
 
-    if ensure_config(&cloud, Some(&app)).await.is_err() {
-        return Err("Cloud not configured".into());
+    if let Err(err) = ensure_config(&cloud, Some(&app)).await {
+        let message = format!("Cloud not configured: {err}");
+        let _ = app.emit(
+            "sync://download-error",
+            DownloadErrorPayload {
+                version_id: version_id.clone(),
+                message: message.clone(),
+            },
+        );
+        return Err(message);
     }
 
     let backend = cloud.lock().await;
@@ -312,11 +320,18 @@ pub async fn update_cloud_mode(
         return Err(cloud_error_to_string(err));
     }
 
-    match parsed_mode {
-        CloudMode::Official => validate_official_cloud_settings(&app, &updated_settings.cloud)?,
-        CloudMode::SelfHost => validate_self_host_settings(&app, &updated_settings.cloud)?,
-        CloudMode::Off => emit_validation(&app, CloudMode::Off, true, "Cloud mode disabled".into()),
+    let validation_result = match parsed_mode {
+        CloudMode::Official => validate_official_config(&app, &updated_settings.cloud).await,
+        CloudMode::SelfHost => validate_self_host_config(&app, &updated_settings.self_host).await,
+        CloudMode::Off => {
+            emit_validation(&app, CloudMode::Off, true, "Cloud mode disabled".into());
+            Ok(())
+        }
     };
+
+    if let Err(err) = validation_result {
+        return Err(err);
+    }
 
     let _ = app.emit("cloud://mode-changed", &parsed_mode);
     tracing::info!("{tag} Cloud mode changed to {:?}", parsed_mode);
@@ -336,12 +351,20 @@ pub async fn get_cloud_status(
         .get_settings()
         .map_err(|e| format!("Failed to load settings: {e}"))?;
 
-    let base_url = app_settings
-        .cloud
-        .base_url
-        .trim_end_matches('/')
-        .to_string();
-    let ping_url = format!("{}/ping", base_url);
+    let base_url = match app_settings.cloud_mode {
+        CloudMode::Official => app_settings.cloud.base_url.clone(),
+        CloudMode::SelfHost => app_settings.self_host.api_server.clone(),
+        CloudMode::Off => String::new(),
+    }
+    .trim_end_matches('/')
+    .to_string();
+
+    if base_url.is_empty() {
+        let message = "Cloud base URL is missing".to_string();
+        let _ = app.emit("sync://offline", message.clone());
+        return Err(message);
+    }
+
     let timeout = Duration::from_secs(app_settings.cloud.timeout_seconds.max(1));
     let client = Client::builder()
         .timeout(timeout)
@@ -349,12 +372,46 @@ pub async fn get_cloud_status(
         .map_err(|e| format!("Failed to build client: {e}"))?;
 
     let mut connected = false;
-    if let Ok(response) = client.head(ping_url).send().await {
-        connected = response.status().is_success();
+    let mut last_error: Option<String> = None;
+    for url in [format!("{}/health", base_url), base_url.clone()] {
+        let mut request = client.get(url.clone());
+        if app_settings.cloud_mode == CloudMode::Official && !app_settings.cloud.api_key.is_empty()
+        {
+            request = request.header(
+                "Authorization",
+                format!("Bearer {}", app_settings.cloud.api_key),
+            );
+        }
+        if app_settings.cloud_mode == CloudMode::SelfHost
+            && !app_settings.self_host.access_key.is_empty()
+        {
+            request = request.header(
+                "Authorization",
+                format!("Bearer {}", app_settings.self_host.access_key),
+            );
+        }
+
+        match request.send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    connected = true;
+                    break;
+                }
+                last_error = Some(format!("status {}", resp.status()));
+            }
+            Err(err) => {
+                last_error = Some(err.to_string());
+            }
+        }
     }
 
-    if !connected {
-        let _ = app.emit("sync://offline", "offline");
+    if connected {
+        let _ = app.emit("sync://online", "online");
+    } else {
+        let _ = app.emit(
+            "sync://offline",
+            last_error.unwrap_or_else(|| "offline".to_string()),
+        );
     }
 
     let backend = cloud.lock().await;
@@ -445,49 +502,116 @@ fn emit_validation(app: &AppHandle, mode: CloudMode, valid: bool, message: Strin
     let _ = app.emit(event, payload);
 }
 
-pub(crate) fn validate_self_host_settings(
+#[tauri::command]
+pub async fn validate_official_cloud_settings(
+    new_config: CloudSettings,
+    app: AppHandle,
+) -> Result<(), String> {
+    validate_official_config(&app, &new_config).await
+}
+
+#[tauri::command]
+pub async fn validate_self_host_settings(
+    sh: SelfHostSettings,
+    app: AppHandle,
+) -> Result<(), String> {
+    validate_self_host_config(&app, &sh).await
+}
+
+async fn validate_self_host_config(
     app: &AppHandle,
-    settings: &CloudSettings,
+    settings: &SelfHostSettings,
 ) -> Result<(), String> {
     let tag = mode_log_tag(&CloudMode::SelfHost);
     tracing::debug!("{tag} Validating self-hosted cloud settings");
 
-    let base_url = settings.base_url.trim();
-    if base_url.is_empty() {
-        let message = "Base URL is required for self-host mode".to_string();
+    let id_server = settings.id_server.trim();
+    let relay_server = settings.relay_server.trim();
+    let api_server = settings.api_server.trim();
+    let access_key = settings.access_key.trim();
+
+    if id_server.is_empty() {
+        let message = "ID server URL is required for self-host mode".to_string();
         emit_validation(app, CloudMode::SelfHost, false, message.clone());
         return Err(message);
     }
 
-    if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
-        let message = "Base URL must start with http:// or https://".to_string();
+    if relay_server.is_empty() {
+        let message = "Relay server URL is required for self-host mode".to_string();
         emit_validation(app, CloudMode::SelfHost, false, message.clone());
         return Err(message);
     }
 
-    if settings.enabled && settings.api_key.trim().is_empty() {
-        let message = "Access key is required for authenticated self-host mode".to_string();
+    if api_server.is_empty() {
+        let message = "API server URL is required for self-host mode".to_string();
         emit_validation(app, CloudMode::SelfHost, false, message.clone());
         return Err(message);
     }
 
-    emit_validation(
-        app,
-        CloudMode::SelfHost,
-        true,
-        "Self-host configuration is valid".to_string(),
-    );
-    Ok(())
+    if access_key.is_empty() {
+        let message = "Access key is required for self-host mode".to_string();
+        emit_validation(app, CloudMode::SelfHost, false, message.clone());
+        return Err(message);
+    }
+
+    for url in [id_server, relay_server, api_server] {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            let message = "All URLs must start with http:// or https://".to_string();
+            emit_validation(app, CloudMode::SelfHost, false, message.clone());
+            return Err(message);
+        }
+    }
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to build client: {e}"))?;
+
+    let base_api = api_server.trim_end_matches('/');
+    let health_url = format!("{}/health", base_api);
+    let version_url = format!("{}/version", base_api);
+
+    let auth_header = format!("Bearer {}", access_key);
+    let response = client
+        .get(health_url.clone())
+        .header("Authorization", auth_header.clone())
+        .send()
+        .await;
+
+    let response = match response {
+        Ok(resp) => Ok(resp),
+        Err(_) => {
+            client
+                .get(version_url.clone())
+                .header("Authorization", auth_header.clone())
+                .send()
+                .await
+        }
+    };
+
+    let (valid, message) = match response {
+        Ok(resp) if resp.status().is_success() => (true, "Self-host servers reachable".to_string()),
+        Ok(resp) => (
+            false,
+            format!("Health check failed with status {}", resp.status()),
+        ),
+        Err(err) => (false, format!("Health check error: {err}")),
+    };
+
+    emit_validation(app, CloudMode::SelfHost, valid, message.clone());
+    if valid {
+        Ok(())
+    } else {
+        Err(message)
+    }
 }
 
-pub(crate) fn validate_official_cloud_settings(
-    app: &AppHandle,
-    settings: &CloudSettings,
-) -> Result<(), String> {
+async fn validate_official_config(app: &AppHandle, settings: &CloudSettings) -> Result<(), String> {
     let tag = mode_log_tag(&CloudMode::Official);
     tracing::debug!("{tag} Validating official cloud settings");
 
-    if settings.base_url.trim().is_empty() {
+    let base_url = settings.base_url.trim();
+    if base_url.is_empty() {
         let message = "Base URL is required for official cloud mode".to_string();
         emit_validation(app, CloudMode::Official, false, message.clone());
         return Err(message);
@@ -499,13 +623,53 @@ pub(crate) fn validate_official_cloud_settings(
         return Err(message);
     }
 
-    emit_validation(
-        app,
-        CloudMode::Official,
-        true,
-        "Official cloud configuration is valid".to_string(),
-    );
-    Ok(())
+    let timeout = Duration::from_secs(settings.timeout_seconds.max(1));
+    let client = Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(|e| format!("Failed to build client: {e}"))?;
+
+    let base = base_url.trim_end_matches('/');
+    let health_url = format!("{}/health", base);
+    let auth_header = format!("Bearer {}", settings.api_key.trim());
+    let response = client
+        .get(health_url.clone())
+        .header("Authorization", auth_header.clone())
+        .send()
+        .await;
+
+    let response = match response {
+        Ok(resp) => Ok(resp),
+        Err(_) => {
+            client
+                .get(base.to_string())
+                .header("Authorization", auth_header)
+                .send()
+                .await
+        }
+    };
+
+    let (valid, message) = match response {
+        Ok(resp) if resp.status().is_success() => (true, "Official cloud reachable".to_string()),
+        Ok(resp) => (
+            false,
+            format!("Connectivity failed with status {}", resp.status()),
+        ),
+        Err(err) => (false, format!("Connectivity error: {err}")),
+    };
+
+    if valid {
+        let _ = app.emit("sync://online", "online");
+    } else {
+        let _ = app.emit("sync://offline", message.clone());
+    }
+
+    emit_validation(app, CloudMode::Official, valid, message.clone());
+    if valid {
+        Ok(())
+    } else {
+        Err(message)
+    }
 }
 
 fn mode_to_str(mode: &CloudMode) -> &'static str {

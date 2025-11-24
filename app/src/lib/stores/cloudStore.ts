@@ -37,6 +37,13 @@ export interface CloudDevice {
 export type CloudMode = 'official' | 'self_host' | 'off';
 export type CloudAuthMode = 'NONE' | 'ACCESS_KEY' | 'USERPASS';
 
+export interface SelfHostSettings {
+    id_server: string;
+    relay_server: string;
+    api_server: string;
+    access_key: string;
+}
+
 export interface CloudConfig {
     mode?: CloudMode;
     base_url?: string;
@@ -46,6 +53,7 @@ export interface CloudConfig {
     enabled?: boolean;
     timeout_seconds?: number;
     device_id?: string;
+    self_host?: SelfHostSettings;
     [key: string]: unknown;
 }
 
@@ -59,6 +67,14 @@ interface LoginResult {
     device_id: string;
 }
 
+interface AppSettingsSnapshot {
+    retention_limit: number;
+    auto_delete: boolean;
+    cloud: CloudConfig;
+    cloud_mode: CloudMode;
+    self_host: SelfHostSettings;
+}
+
 type DownloadPhase = 'idle' | 'downloading' | 'completed' | 'error';
 
 interface DownloadState {
@@ -67,6 +83,11 @@ interface DownloadState {
     status: DownloadPhase;
     path: string | null;
     error: string | null;
+}
+
+interface CloudValidationPayload {
+    mode: CloudMode;
+    message: string;
 }
 
 const authState = writable<AuthState>({
@@ -91,7 +112,7 @@ const downloadState = writable<DownloadState>({
     path: null,
     error: null
 });
-const onlineStatus = writable<'online' | 'offline'>('online');
+const onlineStatus = writable<'online' | 'offline'>('offline');
 const devices = writable<CloudDevice[]>([]);
 const cloudMode = writable<CloudMode>('off');
 const cloudConfig = writable<CloudConfig | null>(null);
@@ -142,6 +163,12 @@ function bindEvents() {
         }),
         listen('sync://online', () => onlineStatus.set('online')),
         listen('sync://offline', () => onlineStatus.set('offline')),
+        listen<CloudValidationPayload>('cloud://config-valid', (event) => {
+            validationResult.set({ status: 'valid', message: event.payload?.message ?? 'Configuration valid' });
+        }),
+        listen<CloudValidationPayload>('cloud://config-invalid', (event) => {
+            validationResult.set({ status: 'invalid', message: event.payload?.message ?? 'Configuration invalid' });
+        }),
         listen<{ mode: CloudMode; config?: CloudConfig }>('cloud://mode-changed', (event) => {
             cloudMode.set(event.payload.mode);
             if (event.payload.config) {
@@ -181,6 +208,18 @@ export const cloudStore = {
 
     async initialize(): Promise<void> {
         bindEvents();
+        try {
+            const appSettings = await invoke<AppSettingsSnapshot>('get_app_settings');
+            if (appSettings?.cloud_mode) {
+                cloudMode.set(appSettings.cloud_mode);
+            }
+            if (appSettings?.self_host) {
+                cloudConfig.update((config) => ({ ...(config ?? {}), self_host: appSettings.self_host }));
+            }
+        } catch (error) {
+            console.error('Failed to hydrate app settings', error);
+        }
+
         try {
             const config = await invoke<CloudConfig>('get_cloud_config');
             cloudConfig.set(config);
@@ -322,6 +361,23 @@ export const cloudStore = {
         return updated ?? config;
     },
 
+    async updateSelfHostSettings(settings: SelfHostSettings): Promise<SelfHostSettings> {
+        bindEvents();
+        const snapshot = await invoke<AppSettingsSnapshot>('get_app_settings');
+        const updatedSettings = await invoke<AppSettingsSnapshot>('update_app_settings', {
+            settings: {
+                ...snapshot,
+                self_host: settings,
+                cloud_mode: snapshot.cloud_mode ?? get(cloudMode)
+            }
+        });
+
+        const mergedConfig = { ...get(cloudConfig), self_host: updatedSettings.self_host, mode: 'self_host' as CloudMode };
+        cloudConfig.set(mergedConfig);
+        cloudMode.set((mergedConfig.mode as CloudMode) ?? get(cloudMode));
+        return updatedSettings.self_host;
+    },
+
     async updateCloudMode(mode: CloudMode): Promise<void> {
         bindEvents();
         await invoke('update_cloud_mode', { newMode: mode });
@@ -333,6 +389,11 @@ export const cloudStore = {
         const current = get(cloudConfig) ?? { mode: get(cloudMode) };
         const merged = { ...current, ...partialConfig, mode: partialConfig.mode ?? current.mode ?? get(cloudMode) };
         cloudConfig.set(merged);
+        if (partialConfig.self_host) {
+            await this.updateSelfHostSettings(partialConfig.self_host);
+            return merged;
+        }
+
         return await this.updateCloudConfig(merged);
     },
 
@@ -346,10 +407,16 @@ export const cloudStore = {
         }
 
         try {
-            const result = await invoke<{ valid: boolean; message?: string }>('validate_self_host_settings', { config: payload });
+            const selfHost: SelfHostSettings | undefined = (payload as CloudConfig)?.self_host;
+            if (!selfHost) {
+                validationResult.set(defaultResult);
+                return defaultResult;
+            }
+
+            await invoke<void>('validate_self_host_settings', { sh: selfHost });
             const validation: CloudValidationResult = {
-                status: result?.valid ? 'valid' : 'invalid',
-                message: result?.message ?? (result?.valid ? 'Settings are valid' : 'Validation failed')
+                status: 'valid',
+                message: 'Validation triggered'
             };
             validationResult.set(validation);
             return validation;
@@ -371,11 +438,8 @@ export const cloudStore = {
         }
 
         try {
-            const result = await invoke<{ valid: boolean; message?: string }>('validate_official_cloud_settings', { config: payload });
-            const validation: CloudValidationResult = {
-                status: result?.valid ? 'valid' : 'invalid',
-                message: result?.message ?? (result?.valid ? 'Settings are valid' : 'Validation failed')
-            };
+            await invoke<void>('validate_official_cloud_settings', { newConfig: payload });
+            const validation: CloudValidationResult = { status: 'valid', message: 'Validation triggered' };
             validationResult.set(validation);
             return validation;
         } catch (error: unknown) {
