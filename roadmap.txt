@@ -78,12 +78,12 @@ STATUS: IN PROGRESS
 - Download version
 - Device_id assignment
 
-3.2 Sync Logic (IN PROGRESS)
+3.2 Sync Logic (DONE)
 - Latest-wins + conflict detection
 - Tracking upload queue
 - Throttled sync
 
-3.3 Cloud Account UI
+3.3 Cloud Account UI (DONE)
 - Login page
 - Device management
 - Manual Sync button
@@ -128,9 +128,9 @@ STATUS: PENDING
 ========================================
 CURRENT PROJECT POSITION
 ========================================
-PHASE: 3 — Cloud Sync System
-SUBTASK: 3.1 Cloud API
-NEXT: Design cloud API and authentication flow
+PHASE: 
+SUBTASK: 
+NEXT: 
 
 ========================================
 END
