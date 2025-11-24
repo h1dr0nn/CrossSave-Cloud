@@ -139,6 +139,36 @@
 
             <div class="divider"></div>
 
+            <a href="/settings/cloud" class="setting-row clickable">
+              <div class="setting-info">
+                <div class="setting-icon cloud-mode">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M18 10h-1.26A8 8 0 1 0 9 17h9a5 5 0 0 0 0-10z"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </div>
+                <div class="setting-content">
+                  <p class="setting-label">Cloud Mode</p>
+                </div>
+              </div>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M9 18l6-6-6-6"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </a>
+
+            <div class="divider"></div>
+
             <a href="/settings/backup" class="setting-row clickable">
               <div class="setting-info">
                 <div class="setting-icon backup">
@@ -362,6 +392,10 @@
 
   .setting-icon.cloud {
     background: linear-gradient(135deg, #3b82f6, #2563eb);
+  }
+
+  .setting-icon.cloud-mode {
+    background: linear-gradient(135deg, #06b6d4, #0891b2);
   }
 
   .setting-icon.profiles {

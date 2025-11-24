@@ -38,7 +38,10 @@
 
   $: activeMode = ($modeStore as CloudMode) ?? "off";
   $: onlineStatus = ($onlineStatusStore as "online" | "offline") ?? "offline";
-  $: validation = ($validationStore as CloudValidationResult) ?? { status: "idle", message: "" };
+  $: validation = ($validationStore as CloudValidationResult) ?? {
+    status: "idle",
+    message: "",
+  };
   $: if ($configStore) {
     localConfig = { ...localConfig, ...$configStore };
   }
@@ -52,7 +55,7 @@
   });
 
   function goBack() {
-    goto("/", { keepFocus: true, noScroll: true });
+    goto("/settings", { keepFocus: true, noScroll: true });
   }
 
   async function handleModeChange(mode: CloudMode) {
@@ -69,13 +72,16 @@
       statusMessage =
         typeof error === "string"
           ? error
-          : (error as Error)?.message ?? "Failed to update mode";
+          : ((error as Error)?.message ?? "Failed to update mode");
     } finally {
       saving = false;
     }
   }
 
-  async function updateSelfHostField(field: keyof CloudConfig, value: string | CloudAuthMode) {
+  async function updateSelfHostField(
+    field: keyof CloudConfig,
+    value: string | CloudAuthMode
+  ) {
     if (activeMode !== "self_host") return;
     saving = true;
     statusMessage = "";
@@ -88,7 +94,7 @@
       statusMessage =
         typeof error === "string"
           ? error
-          : (error as Error)?.message ?? "Failed to update settings";
+          : ((error as Error)?.message ?? "Failed to update settings");
     } finally {
       saving = false;
     }
@@ -106,7 +112,7 @@
       statusMessage =
         typeof error === "string"
           ? error
-          : (error as Error)?.message ?? "Failed to update settings";
+          : ((error as Error)?.message ?? "Failed to update settings");
     } finally {
       saving = false;
     }
@@ -121,7 +127,7 @@
       statusMessage =
         typeof error === "string"
           ? error
-          : (error as Error)?.message ?? "Validation failed";
+          : ((error as Error)?.message ?? "Validation failed");
     } finally {
       validating = false;
     }
@@ -132,134 +138,169 @@
   <div class="content-surface">
     <main class="content-body">
       <div class="header-wrapper">
-        <AppHeader title="Cloud Mode" showBack onBack={goBack} onMenu={() => {}} sticky={false} />
+        <AppHeader
+          title="Cloud Mode"
+          showBack
+          onBack={goBack}
+          onMenu={() => {}}
+          sticky={false}
+        />
       </div>
 
-      <div class="tab-shell">
-        <div class="tab-header">
-          <div class="segmented" role="tablist" aria-label="Cloud mode">
-            {#each modes as mode}
-              <button
-                type="button"
-                role="tab"
-                aria-pressed={activeMode === mode.value}
-                class:active={activeMode === mode.value}
-                on:click={() => handleModeChange(mode.value)}
-                disabled={saving}
-              >
-                {mode.label}
-              </button>
-            {/each}
-          </div>
-
-          <div class="status-chip" aria-live="polite">
-            <span class={`dot ${onlineStatus}`}></span>
-            <span class="status-text">{onlineStatus === "online" ? "Online" : "Offline"}</span>
-          </div>
-        </div>
-
-        {#if loading}
-          <div class="loading">Loading cloud settings...</div>
-        {:else if activeMode === "off"}
-          <div class="disabled-card">
-            <p class="disabled-label">Cloud Sync Disabled</p>
-            <p class="muted">Switch to Official Cloud or Self-host to configure sync.</p>
-          </div>
-        {:else if activeMode === "official"}
-          <div class="settings-card">
-            <div class="card-content">
-              <div class="input-group">
-                <label for="official-base">Base URL</label>
-                <input
-                  id="official-base"
-                  type="url"
-                  placeholder="https://cloud.crosssave.app"
-                  value={localConfig.base_url ?? ""}
-                  on:input={(event) =>
-                    updateOfficialField("base_url", (event.currentTarget as HTMLInputElement).value)}
-                />
+      <div class="settings-container">
+        <div class="section-group">
+          <div class="tab-shell">
+            <div class="tab-header">
+              <div class="segmented" role="tablist" aria-label="Cloud mode">
+                {#each modes as mode}
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-pressed={activeMode === mode.value}
+                    class:active={activeMode === mode.value}
+                    on:click={() => handleModeChange(mode.value)}
+                    disabled={saving}
+                  >
+                    {mode.label}
+                  </button>
+                {/each}
               </div>
 
-              <div class="input-group">
-                <label for="official-api">API Key</label>
-                <input
-                  id="official-api"
-                  type="password"
-                  placeholder="Enter API key"
-                  value={localConfig.api_key ?? ""}
-                  on:input={(event) =>
-                    updateOfficialField("api_key", (event.currentTarget as HTMLInputElement).value)}
-                />
+              <div class="status-chip" aria-live="polite">
+                <span class={`dot ${onlineStatus}`}></span>
+                <span class="status-text"
+                  >{onlineStatus === "online" ? "Online" : "Offline"}</span
+                >
               </div>
-
-              <div class="actions-row">
-                <button class="btn-primary" on:click={validateOfficial} disabled={validating}>
-                  {validating ? "Validating..." : "Validate Settings"}
-                </button>
-              </div>
-
-              {#if validation.status !== "idle"}
-                <p class={`validation ${validation.status}`}>
-                  {validation.message}
-                </p>
-              {/if}
             </div>
-          </div>
-        {:else if activeMode === "self_host"}
-          <div class="settings-card">
-            <div class="card-content">
-              <div class="input-group">
-                <label for="self-base">Base URL</label>
-                <input
-                  id="self-base"
-                  type="url"
-                  placeholder="https://my-cloud.local"
-                  value={localConfig.base_url ?? ""}
-                  on:input={(event) =>
-                    updateSelfHostField("base_url", (event.currentTarget as HTMLInputElement).value)}
-                />
-              </div>
 
-              <div class="input-group">
-                <label for="self-access">Access Key</label>
-                <input
-                  id="self-access"
-                  type="password"
-                  placeholder="Access key"
-                  value={localConfig.access_key ?? ""}
-                  on:input={(event) =>
-                    updateSelfHostField("access_key", (event.currentTarget as HTMLInputElement).value)}
-                />
+            {#if loading}
+              <div class="loading">Loading cloud settings...</div>
+            {:else if activeMode === "off"}
+              <div class="disabled-card">
+                <p class="disabled-label">Cloud Sync Disabled</p>
+                <p class="muted">
+                  Switch to Official Cloud or Self-host to configure sync.
+                </p>
               </div>
+            {:else if activeMode === "official"}
+              <div class="settings-card">
+                <div class="card-content">
+                  <div class="input-group">
+                    <label for="official-base">Base URL</label>
+                    <input
+                      id="official-base"
+                      type="url"
+                      placeholder="https://cloud.crosssave.app"
+                      value={localConfig.base_url ?? ""}
+                      on:input={(event) =>
+                        updateOfficialField(
+                          "base_url",
+                          (event.currentTarget as HTMLInputElement).value
+                        )}
+                    />
+                  </div>
 
-              <div class="input-group">
-                <label>Auth Mode</label>
-                <div class="segmented auth" role="group" aria-label="Auth mode">
-                  {#each authOptions as option}
+                  <div class="input-group">
+                    <label for="official-api">API Key</label>
+                    <input
+                      id="official-api"
+                      type="password"
+                      placeholder="Enter API key"
+                      value={localConfig.api_key ?? ""}
+                      on:input={(event) =>
+                        updateOfficialField(
+                          "api_key",
+                          (event.currentTarget as HTMLInputElement).value
+                        )}
+                    />
+                  </div>
+
+                  <div class="actions-row">
                     <button
-                      type="button"
-                      class:active={localConfig.auth_mode === option.value}
-                      aria-pressed={localConfig.auth_mode === option.value}
-                      on:click={() => updateSelfHostField("auth_mode", option.value)}
+                      class="btn-primary"
+                      on:click={validateOfficial}
+                      disabled={validating}
                     >
-                      {option.label}
+                      {validating ? "Validating..." : "Validate Settings"}
                     </button>
-                  {/each}
+                  </div>
+
+                  {#if validation.status !== "idle"}
+                    <p class={`validation ${validation.status}`}>
+                      {validation.message}
+                    </p>
+                  {/if}
                 </div>
               </div>
+            {:else if activeMode === "self_host"}
+              <div class="settings-card">
+                <div class="card-content">
+                  <div class="input-group">
+                    <label for="self-base">Base URL</label>
+                    <input
+                      id="self-base"
+                      type="url"
+                      placeholder="https://my-cloud.local"
+                      value={localConfig.base_url ?? ""}
+                      on:input={(event) =>
+                        updateSelfHostField(
+                          "base_url",
+                          (event.currentTarget as HTMLInputElement).value
+                        )}
+                    />
+                  </div>
 
-              {#if validation.status !== "idle"}
-                <p class={`validation ${validation.status}`}>
-                  {validation.message}
-                </p>
-              {/if}
-            </div>
+                  <div class="input-group">
+                    <label for="self-access">Access Key</label>
+                    <input
+                      id="self-access"
+                      type="password"
+                      placeholder="Access key"
+                      value={localConfig.access_key ?? ""}
+                      on:input={(event) =>
+                        updateSelfHostField(
+                          "access_key",
+                          (event.currentTarget as HTMLInputElement).value
+                        )}
+                    />
+                  </div>
+
+                  <div class="input-group">
+                    <label>Auth Mode</label>
+                    <div
+                      class="segmented auth"
+                      role="group"
+                      aria-label="Auth mode"
+                    >
+                      {#each authOptions as option}
+                        <button
+                          type="button"
+                          class:active={localConfig.auth_mode === option.value}
+                          aria-pressed={localConfig.auth_mode === option.value}
+                          on:click={() =>
+                            updateSelfHostField("auth_mode", option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
+
+                  {#if validation.status !== "idle"}
+                    <p class={`validation ${validation.status}`}>
+                      {validation.message}
+                    </p>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+
+            {#if statusMessage}
+              <p class="status-message">{statusMessage}</p>
+            {/if}
           </div>
-        {/if}
-
-        {#if statusMessage}
-          <p class="status-message">{statusMessage}</p>
-        {/if}
+        </div>
       </div>
     </main>
   </div>
@@ -299,6 +340,18 @@
     margin-bottom: clamp(16px, 3vw, 32px);
   }
 
+  .settings-container {
+    width: 100%;
+    display: grid;
+    gap: 32px;
+    align-content: start;
+  }
+
+  .section-group {
+    display: grid;
+    gap: 8px;
+  }
+
   .tab-shell {
     display: grid;
     gap: 16px;
@@ -330,7 +383,10 @@
     border-radius: 10px;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.2s, color 0.2s, transform 0.1s ease;
+    transition:
+      background 0.2s,
+      color 0.2s,
+      transform 0.1s ease;
   }
 
   .segmented button.active,
