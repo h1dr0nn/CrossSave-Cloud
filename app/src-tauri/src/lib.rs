@@ -70,7 +70,9 @@ pub fn run() {
                 }
             };
 
-            let current_settings = settings_manager
+            let settings_arc = Arc::new(settings_manager);
+
+            let current_settings = settings_arc
                 .get_settings()
                 .unwrap_or_else(|_| core::settings::AppSettings::default());
 
@@ -103,10 +105,10 @@ pub fn run() {
                 tracing::warn!("[CLOUD] Failed to create cloud downloads dir: {e}");
             }
 
-            let cloud_backend = HttpCloudBackend::new(settings_manager.clone())
+            let cloud_backend = HttpCloudBackend::new(settings_arc.clone())
                 .unwrap_or_else(|err| {
                     tracing::error!("[CLOUD] Failed to initialize HTTP backend: {err}");
-                    HttpCloudBackend::new(settings_manager.clone())
+                    HttpCloudBackend::new(settings_arc.clone())
                         .expect("Failed to init fallback http backend")
                 });
             let cloud: Box<dyn CloudBackend + Send> = Box::new(cloud_backend);
@@ -115,7 +117,6 @@ pub fn run() {
 
             // Register state
             let history_arc = Arc::new(history_manager);
-            let settings_arc = Arc::new(settings_manager);
             let cloud_arc = Arc::new(Mutex::new(cloud));
 
             app.manage(WatcherManager::default());

@@ -286,6 +286,7 @@ impl UploadQueue {
         backend
             .upload_archive(metadata, job.archive_path.clone())
             .await
+            .map(|_| ())
             .map_err(|e| e.to_string())
     }
 }
@@ -456,6 +457,7 @@ impl Clone for SyncManager {
             settings: self.settings.clone(),
             app_handle: self.app_handle.clone(),
             sync_trigger: self.sync_trigger.clone(),
+            running: self.running.clone(),
         }
     }
 }
