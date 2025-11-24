@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 
 use reqwest::Client;
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::core::cloud::{CloudBackend, CloudDevice, CloudError, CloudVersionSummary};
 use crate::core::history::HistoryManager;
