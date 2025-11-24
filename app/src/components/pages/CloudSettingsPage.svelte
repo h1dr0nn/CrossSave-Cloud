@@ -196,11 +196,22 @@
       cloudStore.validateOfficialCloudSettings(localConfig);
 
     try {
-      await Promise.all([minDelay, validationPromise]);
+      const [_, result] = await Promise.all([minDelay, validationPromise]);
       if (activeMode !== "official") return;
+
+      if (result.status === "invalid") {
+        throw new Error(result.message);
+      }
+
       onlineStatus = "online";
     } catch (error) {
-      await minDelay; // Ensure delay even on error
+      // If we caught an error from Promise.all (unlikely for validationPromise as it catches internally, but possible for minDelay?)
+      // Or if we threw the error above.
+      // We don't need to await minDelay again if we came from Promise.all, but if we came from a throw above, minDelay is already done.
+      // If validationPromise rejected (which it shouldn't per store code), we might not have waited for minDelay if it failed fast?
+      // Actually Promise.all fails fast. But validationPromise catches internally.
+      // So the only way we get here is if we threw new Error(result.message).
+
       if (activeMode !== "official") return;
 
       console.error("[CloudSettings] Connection failed:", error);
