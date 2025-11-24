@@ -1,10 +1,10 @@
 mod api;
 mod core;
 
-use tauri::Emitter;
 use api::cloud_api::{
     download_cloud_version, get_cloud_config, get_cloud_status, list_cloud_versions, list_devices,
-    login_cloud, logout_cloud, remove_device, update_cloud_config, upload_cloud_save,
+    login_cloud, logout_cloud, remove_device, update_cloud_config, update_cloud_mode,
+    upload_cloud_save,
 };
 use api::explorer_api::{check_path_status, open_folder, scan_save_files};
 use api::history_api::{delete_history_item, get_history_item, list_history, rollback_version};
@@ -25,6 +25,7 @@ use core::sync::SyncManager;
 use core::watcher::WatcherManager;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use tauri::Emitter;
 use tauri::Manager;
 use tokio::sync::Mutex;
 
@@ -180,6 +181,7 @@ pub fn run() {
             logout_cloud,
             list_devices,
             remove_device,
+            update_cloud_mode,
             get_sync_status,
             force_sync_now,
             clear_sync_queue,
@@ -188,19 +190,29 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-fn switch_cloud_backend(
+pub(crate) fn switch_cloud_backend(
     app: &tauri::AppHandle,
     cloud_state: &CloudBackendState,
     settings_manager: Arc<SettingsManager>,
     mode: CloudMode,
     settings: AppSettings,
 ) -> Result<(), CloudError> {
-    tracing::debug!("[CLOUD] Switching backend to {:?}", mode);
+    let tag = mode_log_tag(&mode);
+    tracing::debug!("{tag} Switching backend to {:?}", mode);
 
     let backend: Box<dyn CloudBackend + Send> = match mode {
-        CloudMode::Official => Box::new(HttpCloudBackend::new(settings_manager.clone())?),
-        CloudMode::SelfHost => Box::new(SelfHostHttpBackend::new(settings_manager.clone())?),
-        CloudMode::Off => Box::new(DisabledCloudBackend),
+        CloudMode::Official => {
+            tracing::info!("{tag} Preparing official cloud backend");
+            Box::new(HttpCloudBackend::new(settings_manager.clone())?)
+        }
+        CloudMode::SelfHost => {
+            tracing::info!("{tag} Preparing self-hosted cloud backend");
+            Box::new(SelfHostHttpBackend::new(settings_manager.clone())?)
+        }
+        CloudMode::Off => {
+            tracing::info!("{tag} Disabling cloud backend");
+            Box::new(DisabledCloudBackend)
+        }
     };
 
     {
@@ -210,11 +222,19 @@ fn switch_cloud_backend(
 
     let _ = app.emit("cloud://backend-switched", &mode);
     tracing::info!(
-        "[CLOUD] Backend switched to {:?} (cloud enabled: {})",
+        "{tag} Backend switched to {:?} (cloud enabled: {})",
         mode,
         settings.cloud.enabled
     );
     Ok(())
+}
+
+pub(crate) fn mode_log_tag(mode: &CloudMode) -> &'static str {
+    match mode {
+        CloudMode::Official => "[CLOUD_OFFICIAL]",
+        CloudMode::SelfHost => "[CLOUD_SELF_HOST]",
+        CloudMode::Off => "[CLOUD_DISABLED]",
+    }
 }
 
 fn default_profile_dirs_for_app(app: &tauri::App) -> (PathBuf, PathBuf) {
