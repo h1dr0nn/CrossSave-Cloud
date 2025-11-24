@@ -1,6 +1,7 @@
 mod api;
 mod core;
 
+use tauri::Emitter;
 use api::cloud_api::{
     download_cloud_version, get_cloud_config, get_cloud_status, list_cloud_versions, list_devices,
     login_cloud, logout_cloud, remove_device, update_cloud_config, upload_cloud_save,
@@ -207,7 +208,7 @@ fn switch_cloud_backend(
         *guard = backend;
     }
 
-    let _ = app.emit_all("cloud://backend-switched", &mode);
+    let _ = app.emit("cloud://backend-switched", &mode);
     tracing::info!(
         "[CLOUD] Backend switched to {:?} (cloud enabled: {})",
         mode,
