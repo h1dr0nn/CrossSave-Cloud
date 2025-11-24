@@ -503,5 +503,3 @@ fn calculate_sha256(path: &PathBuf) -> Result<String, CloudError> {
     let result = hasher.finalize();
     Ok(format!("{:x}", result))
 }
-
-*** End of File

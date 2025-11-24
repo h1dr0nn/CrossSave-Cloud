@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{atomic::Ordering, Arc, AtomicBool};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -347,7 +347,7 @@ impl SyncManager {
         let running_flag = self.running.clone();
 
         tokio::spawn(async move {
-            if running_flag.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            if running_flag.swap(true, Ordering::SeqCst) {
                 return;
             }
 
