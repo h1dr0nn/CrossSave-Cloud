@@ -112,7 +112,7 @@ const downloadState = writable<DownloadState>({
     path: null,
     error: null
 });
-const onlineStatus = writable<'online' | 'offline'>('offline');
+const onlineStatus = writable<'online' | 'offline' | 'connecting' | 'failed'>('offline');
 const devices = writable<CloudDevice[]>([]);
 const cloudMode = writable<CloudMode>('off');
 const cloudConfig = writable<CloudConfig | null>(null);
@@ -163,6 +163,9 @@ function bindEvents() {
         }),
         listen('sync://online', () => onlineStatus.set('online')),
         listen('sync://offline', () => onlineStatus.set('offline')),
+        listen('cloud://reconnect-started', () => onlineStatus.set('connecting')),
+        listen('cloud://online', () => onlineStatus.set('online')),
+        listen('cloud://reconnect-required', () => onlineStatus.set('failed')),
         listen<CloudValidationPayload>('cloud://config-valid', (event) => {
             validationResult.set({ status: 'valid', message: event.payload?.message ?? 'Configuration valid' });
         }),
@@ -380,8 +383,13 @@ export const cloudStore = {
 
     async updateCloudMode(mode: CloudMode): Promise<void> {
         bindEvents();
-        await invoke('update_cloud_mode', { newMode: mode });
         cloudMode.set(mode);
+        try {
+            await invoke('update_cloud_mode', { newMode: mode });
+        } catch (error) {
+            console.error('Failed to update cloud mode', error);
+            throw error;
+        }
     },
 
     async updateCloudSettings(partialConfig: Partial<CloudConfig>): Promise<CloudConfig> {
