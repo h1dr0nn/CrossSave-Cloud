@@ -1,6 +1,7 @@
 mod api;
 mod core;
 
+use tauri::Emitter;
 use api::cloud_api::{
     download_cloud_version, get_cloud_config, get_cloud_status, list_cloud_versions, list_devices,
     login_cloud, logout_cloud, remove_device, update_cloud_config, upload_cloud_save,
@@ -14,16 +15,20 @@ use api::settings_api::{
 };
 use api::sync_api::{clear_sync_queue, force_sync_now, get_sync_status};
 use api::watcher_api::{start_watcher, stop_watcher};
-use core::cloud::{CloudBackend, HttpCloudBackend};
+use core::cloud::{
+    CloudBackend, CloudError, DisabledCloudBackend, HttpCloudBackend, SelfHostHttpBackend,
+};
 use core::history::HistoryManager;
 use core::profile::ProfileManager;
-use core::settings::SettingsManager;
+use core::settings::{AppSettings, CloudMode, SettingsManager};
 use core::sync::SyncManager;
 use core::watcher::WatcherManager;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tauri::Manager;
 use tokio::sync::Mutex;
+
+type CloudBackendState = Arc<Mutex<Box<dyn CloudBackend + Send>>>;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -104,19 +109,24 @@ pub fn run() {
             if let Err(e) = std::fs::create_dir_all(&cloud_downloads_dir) {
                 tracing::warn!("[CLOUD] Failed to create cloud downloads dir: {e}");
             }
+            let cloud: Box<dyn CloudBackend + Send> = Box::new(DisabledCloudBackend);
 
-            let cloud_backend = HttpCloudBackend::new(settings_arc.clone()).unwrap_or_else(|err| {
-                tracing::error!("[CLOUD] Failed to initialize HTTP backend: {err}");
-                HttpCloudBackend::new(settings_arc.clone())
-                    .expect("Failed to init fallback http backend")
-            });
-            let cloud: Box<dyn CloudBackend + Send> = Box::new(cloud_backend);
+            let cloud_arc: CloudBackendState = Arc::new(Mutex::new(cloud));
 
-            tracing::info!("[CLOUD] HTTP cloud backend initialized");
+            if let Err(err) = switch_cloud_backend(
+                &app.handle(),
+                &cloud_arc,
+                settings_arc.clone(),
+                current_settings.cloud_mode.clone(),
+                current_settings.clone(),
+            ) {
+                tracing::error!("[CLOUD] Failed to initialize cloud backend: {err}");
+            }
+
+            tracing::info!("[CLOUD] Cloud backend initialized");
 
             // Register state
             let history_arc = Arc::new(history_manager);
-            let cloud_arc = Arc::new(Mutex::new(cloud));
 
             app.manage(WatcherManager::default());
             app.manage(history_arc.clone());
@@ -176,6 +186,35 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn switch_cloud_backend(
+    app: &tauri::AppHandle,
+    cloud_state: &CloudBackendState,
+    settings_manager: Arc<SettingsManager>,
+    mode: CloudMode,
+    settings: AppSettings,
+) -> Result<(), CloudError> {
+    tracing::debug!("[CLOUD] Switching backend to {:?}", mode);
+
+    let backend: Box<dyn CloudBackend + Send> = match mode {
+        CloudMode::Official => Box::new(HttpCloudBackend::new(settings_manager.clone())?),
+        CloudMode::SelfHost => Box::new(SelfHostHttpBackend::new(settings_manager.clone())?),
+        CloudMode::Off => Box::new(DisabledCloudBackend),
+    };
+
+    {
+        let mut guard = cloud_state.blocking_lock();
+        *guard = backend;
+    }
+
+    let _ = app.emit("cloud://backend-switched", &mode);
+    tracing::info!(
+        "[CLOUD] Backend switched to {:?} (cloud enabled: {})",
+        mode,
+        settings.cloud.enabled
+    );
+    Ok(())
 }
 
 fn default_profile_dirs_for_app(app: &tauri::App) -> (PathBuf, PathBuf) {

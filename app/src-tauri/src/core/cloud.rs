@@ -72,6 +72,8 @@ pub struct CloudDevice {
 pub enum CloudError {
     #[error("cloud sync is not enabled")]
     NotEnabled,
+    #[error("cloud backend is disabled")]
+    Disabled,
     #[error("network error: {0}")]
     NetworkError(String),
     #[error("storage error: {0}")]
@@ -118,6 +120,61 @@ pub trait CloudBackend: Send + Sync {
 }
 
 // =============================================================================
+// Disabled Cloud Backend
+// =============================================================================
+
+#[derive(Clone, Debug)]
+pub struct DisabledCloudBackend;
+
+#[async_trait]
+impl CloudBackend for DisabledCloudBackend {
+    async fn login(&self, _email: String, _password: String) -> Result<String, CloudError> {
+        Err(CloudError::Disabled)
+    }
+
+    async fn upload_archive(
+        &self,
+        _metadata: SaveMetadata,
+        _archive_path: PathBuf,
+    ) -> Result<CloudVersionSummary, CloudError> {
+        Err(CloudError::Disabled)
+    }
+
+    async fn list_versions(
+        &self,
+        _game_id: String,
+        _limit: Option<usize>,
+    ) -> Result<Vec<CloudVersionSummary>, CloudError> {
+        Err(CloudError::Disabled)
+    }
+
+    async fn download_version(
+        &self,
+        _game_id: String,
+        _version_id: String,
+        _target_path: PathBuf,
+    ) -> Result<(), CloudError> {
+        Err(CloudError::Disabled)
+    }
+
+    fn ensure_device_id(&self) -> Result<String, CloudError> {
+        Ok(String::new())
+    }
+
+    async fn list_devices(&self, _token: String) -> Result<Vec<CloudDevice>, CloudError> {
+        Err(CloudError::Disabled)
+    }
+
+    async fn remove_device(&self, _token: String, _device_id: String) -> Result<(), CloudError> {
+        Err(CloudError::Disabled)
+    }
+
+    fn get_device_id(&self) -> Result<String, CloudError> {
+        Err(CloudError::Disabled)
+    }
+}
+
+// =============================================================================
 // HTTP Cloud Backend
 // =============================================================================
 
@@ -126,6 +183,8 @@ pub struct HttpCloudBackend {
     client: Client,
     settings: Arc<SettingsManager>,
 }
+
+pub type SelfHostHttpBackend = HttpCloudBackend;
 
 #[derive(Deserialize)]
 struct LoginResponse {

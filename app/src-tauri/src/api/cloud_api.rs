@@ -9,7 +9,7 @@ use tauri::{Emitter, Manager, State};
 
 use crate::core::cloud::{CloudBackend, CloudDevice, CloudError, CloudVersionSummary};
 use crate::core::history::HistoryManager;
-use crate::core::settings::{CloudSettings, SettingsManager};
+use crate::core::settings::{CloudMode, CloudSettings, SettingsManager};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CloudStatus {
@@ -49,6 +49,8 @@ pub async fn login_cloud(
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<LoginResult, String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
     let backend = cloud.lock().await;
     let token = backend
         .login(email, password)
@@ -72,6 +74,8 @@ pub async fn login_cloud(
 
 #[tauri::command]
 pub async fn logout_cloud(settings: State<'_, Arc<SettingsManager>>) -> Result<(), String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
     let mut app_settings = settings
         .get_settings()
         .map_err(|e| format!("Failed to load settings: {e}"))?;
@@ -97,7 +101,10 @@ pub async fn upload_cloud_save(
     local_version_id: String,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     history: State<'_, Arc<HistoryManager>>,
+    settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<CloudVersionSummary, String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
     let history_entry = history
         .get_history_item(game_id, local_version_id)
         .map_err(|e| format!("Failed to find local version: {e}"))?;
@@ -117,6 +124,8 @@ pub async fn list_devices(
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<Vec<CloudDevice>, String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
     let token = ensure_api_key(&settings)?;
 
     let backend = cloud.lock().await;
@@ -132,6 +141,8 @@ pub async fn remove_device(
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<(), String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
     let token = ensure_api_key(&settings)?;
 
     let backend = cloud.lock().await;
@@ -149,7 +160,10 @@ pub async fn list_cloud_versions(
     game_id: String,
     limit: Option<u32>,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<Vec<CloudVersionSummary>, String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
     if ensure_config(&cloud, None).await.is_err() {
         return Err("Cloud not configured".into());
     }
@@ -169,8 +183,11 @@ pub async fn download_cloud_version(
     game_id: String,
     version_id: String,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    settings: State<'_, Arc<SettingsManager>>,
     app: tauri::AppHandle,
 ) -> Result<String, String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -229,6 +246,8 @@ pub async fn download_cloud_version(
 pub async fn get_cloud_config(
     settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<CloudSettings, String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
     settings
         .get_settings()
         .map(|s| s.cloud)
@@ -243,6 +262,8 @@ pub async fn update_cloud_config(
     new_config: CloudSettings,
     settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<CloudSettings, String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
     let mut app_settings = settings
         .get_settings()
         .map_err(|e| format!("Failed to load settings: {e}"))?;
@@ -260,6 +281,8 @@ pub async fn get_cloud_status(
     settings: State<'_, Arc<SettingsManager>>,
     app: tauri::AppHandle,
 ) -> Result<CloudStatus, String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
     let app_settings = settings
         .get_settings()
         .map_err(|e| format!("Failed to load settings: {e}"))?;
@@ -325,6 +348,7 @@ fn ensure_api_key(settings: &State<'_, Arc<SettingsManager>>) -> Result<String, 
 fn cloud_error_to_string(error: CloudError) -> String {
     match error {
         CloudError::NotEnabled => "Cloud sync is not enabled".to_string(),
+        CloudError::Disabled => "Cloud backend is disabled".to_string(),
         CloudError::NetworkError(msg) => format!("Network error: {}", msg),
         CloudError::StorageError(msg) => format!("Storage error: {}", msg),
         CloudError::NotFound(msg) => format!("Not found: {}", msg),
@@ -333,4 +357,17 @@ fn cloud_error_to_string(error: CloudError) -> String {
         CloudError::Serialization(msg) => format!("Serialization error: {}", msg),
         CloudError::Unauthorized(msg) => format!("Unauthorized: {}", msg),
     }
+}
+
+fn ensure_cloud_mode_enabled(settings: &State<'_, Arc<SettingsManager>>) -> Result<(), CloudError> {
+    let mode = settings
+        .get_settings()
+        .map_err(|e| CloudError::InvalidConfig(format!("Failed to load settings: {e}")))?
+        .cloud_mode;
+
+    if mode == CloudMode::Off {
+        return Err(CloudError::Disabled);
+    }
+
+    Ok(())
 }

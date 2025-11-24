@@ -13,6 +13,8 @@ pub struct AppSettings {
     pub auto_delete: bool,
     #[serde(default)]
     pub cloud: CloudSettings,
+    #[serde(default)]
+    pub cloud_mode: CloudMode,
 }
 
 impl Default for AppSettings {
@@ -21,7 +23,22 @@ impl Default for AppSettings {
             retention_limit: 10,
             auto_delete: true,
             cloud: CloudSettings::default(),
+            cloud_mode: CloudMode::default(),
         }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudMode {
+    Official,
+    SelfHost,
+    Off,
+}
+
+impl Default for CloudMode {
+    fn default() -> Self {
+        CloudMode::Official
     }
 }
 
