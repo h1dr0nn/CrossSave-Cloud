@@ -22,7 +22,7 @@
   let editingProfile: EmulatorProfile | null = null;
   let validation: Record<
     string,
-    { status: string; message: string; validPaths: string[] }
+    { status: string; message: string; validPaths: string[] } | undefined
   > = {};
   let deleteDialogOpen = false;
   let profileToDelete: EmulatorProfile | null = null;
@@ -54,6 +54,7 @@
       pushSuccess(
         `Profile ${event.detail.name} ${editingProfile ? "updated" : "created"}`,
       );
+      isModalOpen = false;
     } catch (error) {
       pushError(`Failed to save profile: ${error}`);
     }
@@ -75,6 +76,7 @@
       pushError(`Failed to delete profile: ${error}`);
     } finally {
       profileToDelete = null;
+      deleteDialogOpen = false;
     }
   }
 
@@ -240,9 +242,9 @@
                       </button>
                       {#if validation[profile.emulator_id]}
                         <div
-                          class={`validation-status ${validation[profile.emulator_id].status}`}
+                          class={`validation-status ${validation[profile.emulator_id]?.status}`}
                         >
-                          {validation[profile.emulator_id].message}
+                          {validation[profile.emulator_id]?.message}
                         </div>
                       {/if}
                     </div>
@@ -412,26 +414,31 @@
   }
 
   .card-content {
-    padding: 16px;
+    padding: 12px 16px;
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
   }
 
   .info-row {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     font-size: 0.9rem;
+    gap: 16px;
   }
 
   .info-row .label {
     color: var(--text-secondary);
+    min-width: 80px;
+    flex-shrink: 0;
   }
 
   .info-row .value {
     font-weight: 500;
     text-align: right;
+    flex: 1;
   }
 
   .validation-section {
