@@ -13,6 +13,7 @@ export interface DeviceInfo {
   device_id: string;
   platform: string;
   last_seen: number;
+  device_name: string;
 }
 
 export interface DevicesEntry {
@@ -69,7 +70,25 @@ export async function saveUserMetadata(env: { CROSSSAVE_R2: R2Bucket }, user: Us
 export async function loadUserDevices(env: { CROSSSAVE_R2: R2Bucket }, userId: string): Promise<DevicesEntry> {
   const existing = await readJson<DevicesEntry>(env.CROSSSAVE_R2, getUserDevicesKey(userId));
   if (existing) {
-    return existing;
+    const normalizedDevices = existing.devices.map((device) => ({
+      device_id: device.device_id,
+      platform: device.platform || "unknown",
+      last_seen: device.last_seen,
+      device_name: device.device_name?.trim() || "Unknown device",
+    }));
+    const needsSave = existing.devices.some((device, index) => {
+      const normalized = normalizedDevices[index];
+      return (
+        device.device_name?.trim() !== normalized.device_name ||
+        (device.platform || "unknown") !== normalized.platform
+      );
+    });
+
+    const devicesEntry = { devices: normalizedDevices };
+    if (needsSave) {
+      await saveUserDevices(env, userId, devicesEntry);
+    }
+    return devicesEntry;
   }
 
   const empty = { devices: [] as DeviceInfo[] };
@@ -86,7 +105,6 @@ export async function updateLastSeen(
   userId: string,
   deviceId: string | undefined,
   timestamp: number,
-  platform = "unknown"
 ): Promise<void> {
   if (!deviceId) {
     return;
@@ -96,9 +114,6 @@ export async function updateLastSeen(
   const existing = devices.devices.find((device) => device.device_id === deviceId);
   if (existing) {
     existing.last_seen = timestamp;
-  } else {
-    devices.devices.push({ device_id: deviceId, platform, last_seen: timestamp });
+    await saveUserDevices(env, userId, devices);
   }
-
-  await saveUserDevices(env, userId, devices);
 }

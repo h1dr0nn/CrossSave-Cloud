@@ -31,6 +31,7 @@ export interface CloudVersion {
 export interface CloudDevice {
     device_id: string;
     platform: string;
+    device_name: string;
     last_seen: number;
 }
 
@@ -53,6 +54,9 @@ export interface CloudConfig {
     enabled?: boolean;
     timeout_seconds?: number;
     device_id?: string;
+    device_name?: string;
+    platform?: string;
+    has_registered_device?: boolean;
     self_host?: SelfHostSettings;
     [key: string]: unknown;
 }
@@ -204,6 +208,45 @@ function loadPersistedEmail(): string | null {
     return localStorage.getItem('cloud:lastEmail');
 }
 
+function detectPlatform(): string {
+    if (typeof navigator === 'undefined') return 'unknown';
+    // @ts-ignore
+    return navigator.userAgentData?.platform || navigator.platform || 'unknown';
+}
+
+async function getDeviceContext(): Promise<{ deviceId: string; platform: string; deviceName: string }> {
+    try {
+        const appSettings = await invoke<AppSettingsSnapshot>('get_app_settings');
+        const cloud = appSettings?.cloud ?? {};
+        return {
+            deviceId: cloud.device_id ?? '',
+            platform: cloud.platform ?? detectPlatform(),
+            deviceName: cloud.device_name ?? 'Unknown device'
+        };
+    } catch (error) {
+        console.error('Failed to load device context', error);
+        return { deviceId: '', platform: detectPlatform(), deviceName: 'Unknown device' };
+    }
+}
+
+async function ensureDeviceRegisteredAfterLogin(): Promise<void> {
+    const context = await getDeviceContext();
+    if (!context.deviceId) {
+        return;
+    }
+
+    try {
+        await invoke('register_cloud_device', {
+            device_id: context.deviceId,
+            platform: context.platform || 'unknown',
+            device_name: context.deviceName || 'Unknown device'
+        });
+    } catch (error) {
+        const message = typeof error === 'string' ? error : (error as Error)?.message ?? 'Device registration failed';
+        console.error('Device registration failed', message);
+    }
+}
+
 export const cloudStore = {
     auth: { subscribe: authState.subscribe },
     syncStatus: { subscribe: syncStatus.subscribe },
@@ -259,6 +302,7 @@ export const cloudStore = {
                 token: result.token,
                 deviceId: result.device_id
             });
+            await ensureDeviceRegisteredAfterLogin();
             await this.listDevices();
             return { success: true };
         } catch (error: unknown) {
@@ -284,9 +328,9 @@ export const cloudStore = {
         return result;
     },
 
-    async registerDevice(deviceId: string, platform: string): Promise<void> {
+    async registerDevice(deviceId: string, platform: string, deviceName: string): Promise<void> {
         bindEvents();
-        await invoke('register_cloud_device', { device_id: deviceId, platform });
+        await invoke('register_cloud_device', { device_id: deviceId, platform, device_name: deviceName });
         await this.listDevices();
     },
 

@@ -29,12 +29,19 @@ interface UploadPayload {
   size_bytes: number;
   sha256: string;
   file_list: string[];
+  device_id?: string;
 }
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+function normalizeDeviceName(deviceName: string | undefined): string {
+  if (!deviceName) return "Unknown device";
+  const collapsed = deviceName.trim().replace(/\s+/g, " ");
+  return collapsed.length ? collapsed : "Unknown device";
 }
 
 function isValidEmail(email: string): boolean {
@@ -58,6 +65,7 @@ function parseUploadPayload(body: Record<string, unknown>): UploadPayload | null
   const fileList = Array.isArray(body.file_list)
     ? body.file_list.map((f) => String(f)).filter((f) => f.trim().length > 0)
     : [];
+  const deviceId = typeof body.device_id === "string" ? body.device_id.trim() : undefined;
 
   fileList.sort();
 
@@ -75,6 +83,7 @@ function parseUploadPayload(body: Record<string, unknown>): UploadPayload | null
     size_bytes: sizeBytes,
     sha256,
     file_list: fileList,
+    device_id: deviceId,
   };
 }
 
@@ -86,8 +95,13 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
 
   const email = normalizeEmail(String(body.email || ""));
   const password = String(body.password || "");
-  const deviceId = typeof body.device_id === "string" ? body.device_id : undefined;
-  const platform = typeof body.platform === "string" ? body.platform : undefined;
+  const deviceId = typeof body.device_id === "string" ? body.device_id.trim() : undefined;
+  const platform = typeof body.platform === "string" ? body.platform.trim() : undefined;
+  const deviceNameInput = typeof body.device_name === "string" ? body.device_name : undefined;
+  const deviceName =
+    deviceNameInput && deviceNameInput.trim().length > 0
+      ? normalizeDeviceName(deviceNameInput)
+      : undefined;
 
   if (!email || !isValidEmail(email)) {
     return errorResponse(400, "invalid_email");
@@ -114,12 +128,15 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
     devices: deviceId ? 1 : 0
   });
 
-  const devices = { devices: [] as Array<{ device_id: string; platform: string; last_seen: number }> };
+  const devices = {
+    devices: [] as Array<{ device_id: string; platform: string; last_seen: number; device_name: string }>,
+  };
   if (deviceId) {
     devices.devices.push({
       device_id: deviceId,
       platform: platform || "unknown",
-      last_seen: now
+      last_seen: now,
+      device_name: deviceName || "Unknown device",
     });
   }
   await saveUserDevices(env, userId, devices);
@@ -138,8 +155,13 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
 
   const email = normalizeEmail(String(body.email || ""));
   const password = String(body.password || "");
-  const deviceId = typeof body.device_id === "string" ? body.device_id : undefined;
-  const platform = typeof body.platform === "string" ? body.platform : undefined;
+  const deviceId = typeof body.device_id === "string" ? body.device_id.trim() : undefined;
+  const platform = typeof body.platform === "string" ? body.platform.trim() : undefined;
+  const deviceNameInput = typeof body.device_name === "string" ? body.device_name : undefined;
+  const deviceName =
+    deviceNameInput && deviceNameInput.trim().length > 0
+      ? normalizeDeviceName(deviceNameInput)
+      : undefined;
 
   if (!email || !isValidEmail(email) || !password) {
     return errorResponse(401, "invalid_credentials");
@@ -162,11 +184,13 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
     if (existing) {
       existing.last_seen = now;
       if (platform) existing.platform = platform;
+      if (deviceName) existing.device_name = deviceName;
     } else {
       devices.devices.push({
         device_id: deviceId,
         platform: platform || "unknown",
-        last_seen: now
+        last_seen: now,
+        device_name: deviceName || "Unknown device",
       });
     }
     await saveUserDevices(env, user.user_id, devices);
@@ -261,7 +285,7 @@ async function handleNotifyUpload(
     size_bytes: payload.size_bytes,
     sha256: payload.sha256,
     file_list: payload.file_list,
-    device_id: auth.device_id,
+    device_id: payload.device_id || auth.device_id,
     timestamp: now,
   };
 
@@ -284,8 +308,13 @@ async function handleRegisterDevice(request: Request, env: Env, auth: AuthContex
     return errorResponse(400, "invalid_json");
   }
 
-  const deviceId = typeof body.device_id === "string" ? body.device_id : "";
-  const platform = typeof body.platform === "string" && body.platform.trim() ? body.platform : "unknown";
+  const deviceId = typeof body.device_id === "string" ? body.device_id.trim() : "";
+  const platform = typeof body.platform === "string" && body.platform.trim() ? body.platform.trim() : "unknown";
+  const deviceNameInput = typeof body.device_name === "string" ? body.device_name : undefined;
+  const deviceName =
+    deviceNameInput && deviceNameInput.trim().length > 0
+      ? normalizeDeviceName(deviceNameInput)
+      : undefined;
 
   if (!deviceId) {
     return errorResponse(400, "missing_device_id");
@@ -297,12 +326,14 @@ async function handleRegisterDevice(request: Request, env: Env, auth: AuthContex
   if (existing) {
     existing.platform = platform;
     existing.last_seen = now;
+    if (deviceName) existing.device_name = deviceName;
   } else {
-    devices.devices.push({ device_id: deviceId, platform, last_seen: now });
+    devices.devices.push({ device_id: deviceId, platform, last_seen: now, device_name: deviceName || "Unknown device" });
   }
 
   await saveUserDevices(env, auth.user_id, devices);
-  return jsonResponse({ ok: true, device_id: deviceId });
+  const device = devices.devices.find((d) => d.device_id === deviceId)!;
+  return jsonResponse({ ok: true, device });
 }
 
 async function handleListDevices(env: Env, auth: AuthContext): Promise<Response> {
@@ -327,6 +358,9 @@ async function handleRemoveDevice(request: Request, env: Env, auth: AuthContext)
 
   const devices = await loadUserDevices(env, auth.user_id);
   const filtered = devices.devices.filter((device) => device.device_id !== deviceId);
+  if (filtered.length === devices.devices.length) {
+    return errorResponse(404, "device_not_found");
+  }
   await saveUserDevices(env, auth.user_id, { devices: filtered });
 
   return jsonResponse({ ok: true });

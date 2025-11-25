@@ -51,7 +51,13 @@ pub struct CloudSettings {
     pub base_url: String,
     pub api_key: String,
     pub device_id: String,
+    #[serde(default)]
+    pub device_name: String,
+    #[serde(default)]
+    pub platform: String,
     pub timeout_seconds: u64,
+    #[serde(default)]
+    pub has_registered_device: bool,
 }
 
 impl Default for CloudSettings {
@@ -61,7 +67,10 @@ impl Default for CloudSettings {
             base_url: "https://api.crosssave.local".to_string(),
             api_key: String::new(),
             device_id: String::new(),
+            device_name: String::new(),
+            platform: String::new(),
             timeout_seconds: 30,
+            has_registered_device: false,
         }
     }
 }
