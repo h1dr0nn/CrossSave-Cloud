@@ -212,7 +212,7 @@
 
     loadingVersions = true;
     try {
-      await cloudStore.listCloudVersions(selectedGame, 10);
+      await cloudStore.listCloudVersions(selectedGame);
     } catch (error) {
       console.error("Failed to load cloud versions:", error);
       pushError("Failed to load cloud versions");
@@ -525,24 +525,21 @@
                             >
                           </div>
                           <div class="version-meta">
-                            <span
-                              >{formatBytes(
-                                version.total_size_bytes ?? version.size_bytes,
-                              )}</span
-                            >
+                            <span>{formatBytes(version.size_bytes)}</span>
                             <span class="separator">•</span>
                             <span class="mono"
-                              >Hash: {version.hash.substring(0, 10)}...</span
+                              >Hash: {version.sha256.substring(0, 10)}...</span
                             >
                           </div>
                           <div class="version-meta">
                             <span
                               >Device: {version.device_id.substring(0, 8)}...</span
                             >
+                            {#if version.device_id === deviceId}
+                              <span class="tag">This device</span>
+                            {/if}
                             <span class="separator">•</span>
-                            <span
-                              >Files: {version.file_list?.length ?? 0}</span
-                            >
+                            <span>Files: {version.file_list.length}</span>
                           </div>
                           {#if downloadState.versionId === version.version_id}
                             <div class="progress-bar small">
@@ -991,6 +988,15 @@
 
   .separator {
     color: var(--border);
+  }
+
+  .tag {
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--primary, #4f46e5);
+    color: white;
+    font-size: 0.75rem;
   }
 
   .error {

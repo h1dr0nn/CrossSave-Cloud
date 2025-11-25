@@ -18,15 +18,12 @@ export interface SyncStatus {
 }
 
 export interface CloudVersion {
-    game_id: string;
-    emulator_id: string;
     version_id: string;
     timestamp: number;
     size_bytes: number;
-    hash: string;
     device_id: string;
-    total_size_bytes?: number;
-    file_list?: string[];
+    sha256: string;
+    file_list: string[];
 }
 
 export interface CloudDevice {
@@ -140,11 +137,11 @@ function bindEvents() {
     if (typeof window === 'undefined') return;
     if (listeners.length > 0) return;
 
-    listeners.push(
-        listen<SyncStatus>('sync://status', (event) => {
-            syncStatus.set(event.payload);
-        }),
-        listen<{ version_id: string; progress: number }>(
+        listeners.push(
+            listen<SyncStatus>('sync://status', (event) => {
+                syncStatus.set(event.payload);
+            }),
+            listen<{ version_id: string; progress: number }>(
             'sync://download-progress',
             (event) => {
                 const payload = event.payload;
@@ -167,21 +164,24 @@ function bindEvents() {
                 error: null
             });
         }),
-        listen<{ version_id: string; message: string }>('sync://download-error', (event) => {
-            const payload = event.payload;
-            downloadState.set({
-                versionId: payload.version_id,
-                progress: 0,
-                status: 'error',
-                path: null,
-                error: payload.message
-            });
-        }),
-        listen('sync://online', () => onlineStatus.set('online')),
-        listen('sync://offline', () => onlineStatus.set('offline')),
-        listen('cloud://reconnect-started', () => onlineStatus.set('connecting')),
-        listen('cloud://online', () => onlineStatus.set('online')),
-        listen('cloud://reconnect-required', () => onlineStatus.set('failed')),
+            listen<{ version_id: string; message: string }>('sync://download-error', (event) => {
+                const payload = event.payload;
+                downloadState.set({
+                    versionId: payload.version_id,
+                    progress: 0,
+                    status: 'error',
+                    path: null,
+                    error: payload.message
+                });
+            }),
+            listen<{ gameId: string; message: string }>('sync://cloud-list-error', (event) => {
+                console.error('Cloud list error:', event.payload?.message ?? event.payload);
+            }),
+            listen('sync://online', () => onlineStatus.set('online')),
+            listen('sync://offline', () => onlineStatus.set('offline')),
+            listen('cloud://reconnect-started', () => onlineStatus.set('connecting')),
+            listen('cloud://online', () => onlineStatus.set('online')),
+            listen('cloud://reconnect-required', () => onlineStatus.set('failed')),
         listen<CloudDevice[]>('cloud://device-updated', (event) => {
             devices.set(event.payload ?? []);
         }),
@@ -401,19 +401,23 @@ export const cloudStore = {
         await invoke('clear_sync_queue');
     },
 
-    async listCloudVersions(gameId: string, limit?: number): Promise<CloudVersion[]> {
+    async listCloudVersions(gameId: string): Promise<CloudVersion[]> {
         bindEvents();
         const versions = await invoke<CloudVersion[]>('list_cloud_versions', {
-            gameId,
-            limit
+            game_id: gameId
         });
 
+        const normalized = versions.map((version) => ({
+            ...version,
+            file_list: version.file_list ?? []
+        }));
+
         cloudVersions.update((map) => {
-            map.set(gameId, versions);
+            map.set(gameId, normalized);
             return map;
         });
 
-        return versions;
+        return normalized;
     },
 
     async downloadCloudVersion(gameId: string, versionId: string): Promise<string> {
