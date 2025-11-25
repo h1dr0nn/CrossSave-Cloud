@@ -10,3 +10,7 @@ compatibility_date = "2024-10-01"
 # TODO: Align bucket_name with the provisioned R2 bucket.
 binding = "CROSSSAVE_R2"
 bucket_name = "crosssave-r2"
+
+[vars]
+# JWT secret should be overridden per-environment via `wrangler secret` or environment configuration.
+JWT_SECRET = "set-me-in-deployments"
