@@ -79,6 +79,7 @@ pub struct UploadRequest {
     pub size_bytes: u64,
     pub sha256: String,
     pub file_list: Vec<String>,
+    pub emulator_id: Option<String>,
     pub device_id: Option<String>,
 }
 
@@ -87,6 +88,23 @@ pub struct UploadUrlResponse {
     pub upload_url: String,
     pub r2_key: String,
     pub version_id: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DownloadUrlResponse {
+    pub ok: bool,
+    pub download_url: String,
+    pub r2_key: String,
+    pub version_id: String,
+    pub game_id: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+    #[serde(default)]
+    pub file_list: Vec<String>,
+    #[serde(default)]
+    pub emulator_id: Option<String>,
+    #[serde(default)]
+    pub timestamp: Option<u64>,
 }
 
 // =============================================================================
@@ -134,6 +152,11 @@ pub trait CloudBackend: Send + Sync {
         payload: UploadRequest,
     ) -> Result<UploadUrlResponse, CloudError>;
     async fn notify_upload_complete(&self, payload: UploadRequest) -> Result<(), CloudError>;
+    async fn request_download_url(
+        &self,
+        game_id: String,
+        version_id: String,
+    ) -> Result<DownloadUrlResponse, CloudError>;
     async fn list_versions(
         &self,
         game_id: String,
@@ -191,6 +214,14 @@ impl CloudBackend for DisabledCloudBackend {
     }
 
     async fn notify_upload_complete(&self, _payload: UploadRequest) -> Result<(), CloudError> {
+        Err(CloudError::Disabled)
+    }
+
+    async fn request_download_url(
+        &self,
+        _game_id: String,
+        _version_id: String,
+    ) -> Result<DownloadUrlResponse, CloudError> {
         Err(CloudError::Disabled)
     }
 
@@ -579,6 +610,7 @@ impl CloudBackend for HttpCloudBackend {
             size_bytes: archive_size,
             sha256: hash.clone(),
             file_list: metadata.file_list.clone(),
+            emulator_id: Some(metadata.emulator_id.clone()),
             device_id: Some(device_id.clone()),
         };
 
@@ -687,6 +719,40 @@ impl CloudBackend for HttpCloudBackend {
         }
 
         Ok(())
+    }
+
+    async fn request_download_url(
+        &self,
+        game_id: String,
+        version_id: String,
+    ) -> Result<DownloadUrlResponse, CloudError> {
+        self.ensure_device_registered().await?;
+        let base_url = self.validate_base_url()?;
+        let auth = self.get_auth_header()?;
+
+        let resp = self
+            .client
+            .post(format!("{}/save/download-url", base_url))
+            .header("Authorization", auth)
+            .json(&serde_json::json!({ "game_id": game_id, "version_id": version_id }))
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
+
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(CloudError::Unauthorized("invalid token".into()));
+        }
+
+        if !resp.status().is_success() {
+            return Err(CloudError::NetworkError(format!(
+                "download url failed: {}",
+                resp.status()
+            )));
+        }
+
+        resp.json()
+            .await
+            .map_err(|e| CloudError::Serialization(e.to_string()))
     }
 
     async fn list_versions(

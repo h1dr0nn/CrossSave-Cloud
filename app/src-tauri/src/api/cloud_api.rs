@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::Mutex;
 
@@ -12,8 +12,9 @@ use crate::core::cloud::{
     UploadRequest, UploadUrlResponse,
 };
 use crate::core::history::HistoryManager;
+use crate::core::profile::ProfileManager;
 use crate::core::settings::{CloudMode, CloudSettings, SelfHostSettings, SettingsManager};
-use crate::core::sync::SyncManager;
+use crate::core::sync::{perform_download, SyncManager};
 use crate::switch_cloud_backend;
 
 #[derive(Clone, Debug, Serialize)]
@@ -51,18 +52,19 @@ struct CloudValidationPayload {
 #[derive(Clone, Debug, Serialize)]
 struct DownloadProgressPayload {
     version_id: String,
-    progress: u8,
+    received_bytes: u64,
+    total_bytes: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
 struct DownloadCompletePayload {
     version_id: String,
-    path: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 struct DownloadErrorPayload {
     version_id: String,
+    stage: String,
     message: String,
 }
 
@@ -435,6 +437,48 @@ pub async fn list_cloud_versions(
         .map_err(cloud_error_to_string)
 }
 
+#[tauri::command]
+pub async fn download_cloud_save(
+    game_id: String,
+    version_id: String,
+    cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    settings: State<'_, Arc<SettingsManager>>,
+    history: State<'_, Arc<HistoryManager>>,
+    profiles: State<'_, Arc<RwLock<ProfileManager>>>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
+    let token = ensure_api_key(&settings)?;
+    if token.trim().is_empty() {
+        return Err("Not logged in".into());
+    }
+
+    if let Err(err) = ensure_config(&cloud, Some(&app)).await {
+        let message = cloud_error_to_string(CloudError::InvalidConfig(err.clone()));
+        let _ = app.emit(
+            "sync://download-error",
+            DownloadErrorPayload {
+                version_id: version_id.clone(),
+                stage: "request-url".to_string(),
+                message: message.clone(),
+            },
+        );
+        return Err(message);
+    }
+
+    perform_download(
+        cloud.inner().clone(),
+        history.inner().clone(),
+        profiles.inner().clone(),
+        app,
+        settings.inner().clone(),
+        game_id,
+        version_id,
+    )
+    .await
+}
+
 /// Downloads a specific version from the cloud to the local downloads directory.
 ///
 /// The file is saved to `AppData/data/cloud_downloads/{game_id}_{version_id}.zip`.
@@ -445,9 +489,20 @@ pub async fn download_cloud_version(
     version_id: String,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings: State<'_, Arc<SettingsManager>>,
+    history: State<'_, Arc<HistoryManager>>,
+    profiles: State<'_, Arc<RwLock<ProfileManager>>>,
     app: tauri::AppHandle,
 ) -> Result<String, String> {
-    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+    download_cloud_save(
+        game_id.clone(),
+        version_id.clone(),
+        cloud,
+        settings,
+        history,
+        profiles,
+        app.clone(),
+    )
+    .await?;
 
     let app_data_dir = app
         .path()
@@ -456,58 +511,7 @@ pub async fn download_cloud_version(
     let downloads_dir = app_data_dir.join("data").join("cloud_downloads");
     let target_path = downloads_dir.join(format!("{}_{}.zip", game_id, version_id));
 
-    if let Err(err) = ensure_config(&cloud, Some(&app)).await {
-        let message = format!("Cloud not configured: {err}");
-        let _ = app.emit(
-            "sync://download-error",
-            DownloadErrorPayload {
-                version_id: version_id.clone(),
-                message: message.clone(),
-            },
-        );
-        return Err(message);
-    }
-
-    let backend = cloud.lock().await;
-    let start_payload = DownloadProgressPayload {
-        version_id: version_id.clone(),
-        progress: 0,
-    };
-    let _ = app.emit("sync://download-progress", start_payload);
-
-    match backend
-        .download_version(game_id, version_id.clone(), target_path.clone())
-        .await
-    {
-        Ok(_) => {
-            let _ = app.emit(
-                "sync://download-progress",
-                DownloadProgressPayload {
-                    version_id: version_id.clone(),
-                    progress: 100,
-                },
-            );
-            let _ = app.emit(
-                "sync://download-complete",
-                DownloadCompletePayload {
-                    version_id: version_id.clone(),
-                    path: target_path.to_string_lossy().to_string(),
-                },
-            );
-            Ok(target_path.to_string_lossy().to_string())
-        }
-        Err(err) => {
-            let err_msg = cloud_error_to_string(err);
-            let _ = app.emit(
-                "sync://download-error",
-                DownloadErrorPayload {
-                    version_id: version_id.clone(),
-                    message: err_msg.clone(),
-                },
-            );
-            Err(err_msg)
-        }
-    }
+    Ok(target_path.to_string_lossy().to_string())
 }
 
 /// Retrieves the current cloud configuration settings.

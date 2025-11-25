@@ -2,10 +2,10 @@ mod api;
 mod core;
 
 use api::cloud_api::{
-    download_cloud_version, get_cloud_config, get_cloud_status, get_upload_url, list_cloud_devices,
-    list_cloud_versions, login_cloud, logout_cloud, notify_upload, reconnect_cloud,
-    register_cloud_device, remove_cloud_device, signup_cloud, update_cloud_config,
-    update_cloud_mode, upload_cloud_save, validate_official_cloud_settings,
+    download_cloud_save, download_cloud_version, get_cloud_config, get_cloud_status,
+    get_upload_url, list_cloud_devices, list_cloud_versions, login_cloud, logout_cloud,
+    notify_upload, reconnect_cloud, register_cloud_device, remove_cloud_device, signup_cloud,
+    update_cloud_config, update_cloud_mode, upload_cloud_save, validate_official_cloud_settings,
     validate_self_host_settings,
 };
 use api::explorer_api::{check_path_status, open_folder, scan_save_files};
@@ -141,15 +141,22 @@ pub fn run() {
             // Register state
             let history_arc = Arc::new(history_manager);
 
+            let profiles_arc = Arc::new(RwLock::new(profile_manager));
+
             app.manage(WatcherManager::default());
             app.manage(history_arc.clone());
-            app.manage(Arc::new(RwLock::new(profile_manager)));
+            app.manage(profiles_arc.clone());
             app.manage(settings_arc.clone());
             app.manage(cloud_arc.clone());
 
             // Initialize SyncManager
-            let sync_manager =
-                SyncManager::new(app.handle().clone(), cloud_arc, history_arc, settings_arc);
+            let sync_manager = SyncManager::new(
+                app.handle().clone(),
+                cloud_arc,
+                history_arc,
+                profiles_arc,
+                settings_arc,
+            );
 
             app.manage(sync_manager.clone());
 
@@ -185,6 +192,7 @@ pub fn run() {
             open_folder,
             upload_cloud_save,
             list_cloud_versions,
+            download_cloud_save,
             download_cloud_version,
             get_cloud_config,
             update_cloud_config,

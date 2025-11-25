@@ -1,5 +1,5 @@
 import { errorResponse, jsonResponse } from "./utils";
-import { ensureUserScaffold, getSaveObjectKey } from "./storage";
+import { ensureUserScaffold, getSaveObjectKey, getUserBaseKey, readJson, writeJson } from "./storage";
 import { hashPassword, verifyPassword } from "./security";
 import {
   getUserByEmail,
@@ -12,6 +12,7 @@ import { signJwt } from "./jwt";
 import { AuthContext, parseAuth } from "./auth";
 import {
   generatePresignedPut,
+  generatePresignedGet,
   loadUserMetadata,
   saveUserMetadata,
   UserSaveMetadata,
@@ -29,6 +30,7 @@ interface UploadPayload {
   size_bytes: number;
   sha256: string;
   file_list: string[];
+  emulator_id?: string;
   device_id?: string;
 }
 
@@ -71,6 +73,17 @@ async function parseJsonBody(request: Request): Promise<Record<string, unknown> 
   }
 }
 
+function parseDownloadPayload(body: Record<string, unknown>): { game_id: string; version_id: string } | null {
+  const gameId = typeof body.game_id === "string" ? body.game_id.trim() : "";
+  const versionId = typeof body.version_id === "string" ? body.version_id.trim() : "";
+
+  if (!gameId || !versionIdValid(versionId)) {
+    return null;
+  }
+
+  return { game_id: gameId, version_id: versionId };
+}
+
 function parseUploadPayload(body: Record<string, unknown>): UploadPayload | null {
   const gameId = typeof body.game_id === "string" ? body.game_id.trim() : "";
   const versionId = typeof body.version_id === "string" ? body.version_id.trim() : "";
@@ -79,6 +92,10 @@ function parseUploadPayload(body: Record<string, unknown>): UploadPayload | null
   const fileList = Array.isArray(body.file_list)
     ? body.file_list.map((f) => String(f)).filter((f) => f.trim().length > 0)
     : [];
+  const emulatorId =
+    typeof body.emulator_id === "string" && body.emulator_id.trim().length > 0
+      ? body.emulator_id.trim()
+      : undefined;
   const deviceId = typeof body.device_id === "string" ? body.device_id.trim() : undefined;
 
   fileList.sort();
@@ -97,6 +114,7 @@ function parseUploadPayload(body: Record<string, unknown>): UploadPayload | null
     size_bytes: sizeBytes,
     sha256,
     file_list: fileList,
+    emulator_id: emulatorId,
     device_id: deviceId,
   };
 }
@@ -293,6 +311,7 @@ async function handleNotifyUpload(
     size_bytes: payload.size_bytes,
     sha256: payload.sha256,
     file_list: payload.file_list,
+    emulator_id: payload.emulator_id,
     device_id: payload.device_id || auth.device_id,
     timestamp: now,
   };
@@ -308,6 +327,86 @@ async function handleNotifyUpload(
   }
 
   return jsonResponse({ ok: true });
+}
+
+async function handleDownloadUrl(
+  request: Request,
+  env: Env,
+  auth: AuthContext
+): Promise<Response> {
+  const body = await parseJsonBody(request);
+  if (!body) {
+    return errorResponse(400, "invalid_json");
+  }
+
+  const payload = parseDownloadPayload(body);
+  if (!payload) {
+    return errorResponse(400, "invalid_payload");
+  }
+
+  let metadata: UserSaveMetadata;
+  try {
+    metadata = await loadUserMetadata(env.CROSSSAVE_R2, auth.user_id);
+  } catch (error) {
+    console.error("[worker] failed to load metadata", error);
+    return errorResponse(500, "metadata_load_failed");
+  }
+
+  const version = metadata.versions.find(
+    (entry) => entry.version_id === payload.version_id && entry.game_id === payload.game_id
+  );
+
+  if (!version) {
+    return errorResponse(404, "version_not_found");
+  }
+
+  const objectKey = getSaveObjectKey(auth.user_id, payload.game_id, payload.version_id);
+  const head = await env.CROSSSAVE_R2.head(objectKey);
+  if (!head) {
+    return errorResponse(404, "object_missing");
+  }
+
+  try {
+    const signed = await generatePresignedGet(
+      env.CROSSSAVE_R2,
+      auth.user_id,
+      payload.game_id,
+      payload.version_id,
+      60 * 10,
+    );
+
+    const response = {
+      ok: true,
+      download_url: signed.url,
+      r2_key: signed.key,
+      version_id: version.version_id,
+      game_id: version.game_id,
+      size_bytes: version.size_bytes,
+      sha256: version.sha256,
+      file_list: version.file_list,
+      emulator_id: version.emulator_id,
+      timestamp: version.timestamp,
+    };
+
+    try {
+      const logKey = `${getUserBaseKey(auth.user_id)}tracking/download_log.json`;
+      const existing = (await readJson<Array<Record<string, unknown>>>(env.CROSSSAVE_R2, logKey)) || [];
+      const now = Math.floor(Date.now() / 1000);
+      existing.push({
+        version_id: version.version_id,
+        timestamp: now,
+        device_id: auth.device_id,
+      });
+      await writeJson(env.CROSSSAVE_R2, logKey, existing);
+    } catch (error) {
+      console.warn("[worker] failed to append download tracking", error);
+    }
+
+    return jsonResponse(response);
+  } catch (error) {
+    console.error("[worker] failed to presign download", error);
+    return errorResponse(500, "presign_failed");
+  }
 }
 
 async function handleRegisterDevice(request: Request, env: Env, auth: AuthContext): Promise<Response> {
@@ -419,6 +518,14 @@ export default {
         return errorResponse(401, "unauthorized");
       }
       return handleNotifyUpload(request, env, auth);
+    }
+
+    if (path === "/save/download-url" && request.method === "POST") {
+      const auth = await requireAuth(env, request);
+      if (!auth) {
+        return errorResponse(401, "unauthorized");
+      }
+      return handleDownloadUrl(request, env, auth);
     }
 
     if (path === "/device/list" && request.method === "GET") {

@@ -201,6 +201,15 @@ impl HistoryManager {
         Ok(entry)
     }
 
+    pub fn add_version_from_cloud(
+        &self,
+        mut metadata: SaveMetadata,
+        archive_path: PathBuf,
+    ) -> Result<HistoryEntry, HistoryError> {
+        metadata.source = Some("cloud".to_string());
+        self.save_to_history(metadata, archive_path)
+    }
+
     pub fn list_history(&self, game_id: String) -> Result<Vec<HistoryEntry>, HistoryError> {
         let mut guard = self
             .cache
