@@ -293,6 +293,8 @@ pub async fn get_upload_url(
         sha256: metadata.sha256,
         file_list: metadata.file_list,
         device_id: Some(device_id),
+        emulator_id: None,
+        worker_token: None,
     };
 
     backend
@@ -306,6 +308,7 @@ pub async fn notify_upload(
     game_id: String,
     version_id: String,
     metadata: UploadMetadataPayload,
+    worker_token: Option<String>,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<(), String> {
@@ -320,6 +323,8 @@ pub async fn notify_upload(
         sha256: metadata.sha256,
         file_list: metadata.file_list,
         device_id: Some(device_id),
+        emulator_id: None,
+        worker_token,
     };
 
     backend

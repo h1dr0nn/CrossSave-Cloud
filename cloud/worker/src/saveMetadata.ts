@@ -59,6 +59,7 @@ export async function generatePresignedPut(
   userId: string,
   gameId: string,
   versionId: string,
+  sizeBytes: number,
   expiresSeconds: number,
 ): Promise<{ url: string; key: string }> {
   const objectKey = getSaveObjectKey(userId, gameId, versionId);
@@ -66,6 +67,10 @@ export async function generatePresignedPut(
     method: "PUT",
     key: objectKey,
     expires: expiresSeconds,
+    headers: {
+      "Content-Length": sizeBytes.toString(),
+      "Content-Type": "application/zip",
+    },
     contentType: "application/zip",
   } as any);
 

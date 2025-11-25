@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
-use reqwest::{header::CONTENT_TYPE, Client};
+use reqwest::{header::CONTENT_LENGTH, header::CONTENT_TYPE, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -533,13 +533,15 @@ impl UploadQueue {
                 )
             })?;
 
-        let payload = UploadRequest {
+        let mut payload = UploadRequest {
             game_id: job.game_id.clone(),
             version_id: job.version_id.clone(),
             size_bytes,
             sha256: hash.clone(),
             file_list: job.metadata.file_list.clone(),
+            emulator_id: Some(job.metadata.emulator_id.clone()),
             device_id: Some(device_id),
+            worker_token: None,
         };
 
         let start_progress = UploadProgressPayload {
@@ -569,6 +571,8 @@ impl UploadQueue {
             }
         };
 
+        payload.worker_token = signed.worker_token.clone();
+
         let archive_bytes = fs::read(&job.archive_path).map_err(|e| {
             emit_error(
                 UploadErrorPayload {
@@ -585,6 +589,7 @@ impl UploadQueue {
         let put_resp = client
             .put(&signed.upload_url)
             .header(CONTENT_TYPE, "application/zip")
+            .header(CONTENT_LENGTH, archive_bytes.len() as u64)
             .body(archive_bytes)
             .send()
             .await;
