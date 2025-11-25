@@ -128,7 +128,8 @@ pub async fn upload_cloud_save(
 }
 
 #[tauri::command]
-pub async fn list_devices(
+pub async fn list_cloud_devices(
+    app: AppHandle,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<Vec<CloudDevice>, String> {
@@ -137,14 +138,55 @@ pub async fn list_devices(
     let token = ensure_api_key(&settings)?;
 
     let backend = cloud.lock().await;
-    backend
-        .list_devices(token)
-        .await
-        .map_err(cloud_error_to_string)
+    match backend.list_devices(token).await {
+        Ok(devices) => {
+            let _ = app.emit("cloud://device-updated", devices.clone());
+            Ok(devices)
+        }
+        Err(err) => {
+            let message = cloud_error_to_string(err);
+            let _ = app.emit("cloud://device-error", message.clone());
+            Err(message)
+        }
+    }
 }
 
 #[tauri::command]
-pub async fn remove_device(
+pub async fn register_cloud_device(
+    app: AppHandle,
+    device_id: String,
+    platform: String,
+    cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    settings: State<'_, Arc<SettingsManager>>,
+) -> Result<(), String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
+    let token = ensure_api_key(&settings)?;
+    let backend = cloud.lock().await;
+
+    match backend
+        .register_device(token.clone(), device_id.clone(), platform)
+        .await
+    {
+        Ok(_) => {
+            let devices = backend
+                .list_devices(token)
+                .await
+                .map_err(cloud_error_to_string)?;
+            let _ = app.emit("cloud://device-updated", devices);
+            Ok(())
+        }
+        Err(err) => {
+            let message = cloud_error_to_string(err);
+            let _ = app.emit("cloud://device-error", message.clone());
+            Err(message)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn remove_cloud_device(
+    app: AppHandle,
     device_id: String,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings: State<'_, Arc<SettingsManager>>,
@@ -154,10 +196,21 @@ pub async fn remove_device(
     let token = ensure_api_key(&settings)?;
 
     let backend = cloud.lock().await;
-    backend
-        .remove_device(token, device_id)
-        .await
-        .map_err(cloud_error_to_string)
+    match backend.remove_device(token.clone(), device_id).await {
+        Ok(_) => {
+            let devices = backend
+                .list_devices(token)
+                .await
+                .map_err(cloud_error_to_string)?;
+            let _ = app.emit("cloud://device-updated", devices);
+            Ok(())
+        }
+        Err(err) => {
+            let message = cloud_error_to_string(err);
+            let _ = app.emit("cloud://device-error", message.clone());
+            Err(message)
+        }
+    }
 }
 
 /// Lists available save versions for a game from the cloud.

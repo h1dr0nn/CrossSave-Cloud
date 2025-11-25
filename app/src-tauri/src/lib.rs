@@ -2,8 +2,8 @@ mod api;
 mod core;
 
 use api::cloud_api::{
-    download_cloud_version, get_cloud_config, get_cloud_status, list_cloud_versions, list_devices,
-    login_cloud, logout_cloud, reconnect_cloud, remove_device, update_cloud_config,
+    download_cloud_version, get_cloud_config, get_cloud_status, list_cloud_versions, list_cloud_devices,
+    login_cloud, logout_cloud, reconnect_cloud, register_cloud_device, remove_cloud_device, update_cloud_config,
     update_cloud_mode, upload_cloud_save, validate_official_cloud_settings,
     validate_self_host_settings,
 };
@@ -16,7 +16,7 @@ use api::settings_api::{
 };
 use api::sync_api::{clear_sync_queue, force_sync_now, get_sync_status};
 use api::watcher_api::{start_watcher, stop_watcher};
-use core::cloud::{log_tag, CloudBackend, CloudError, DisabledCloudBackend, HttpCloudBackend};
+use core::cloud::{default_device_id, log_tag, CloudBackend, CloudError, DisabledCloudBackend, HttpCloudBackend};
 use core::history::HistoryManager;
 use core::profile::ProfileManager;
 use core::settings::{AppSettings, CloudMode, SettingsManager};
@@ -77,9 +77,16 @@ pub fn run() {
 
             let settings_arc = Arc::new(settings_manager);
 
-            let current_settings = settings_arc
+            let mut current_settings = settings_arc
                 .get_settings()
                 .unwrap_or_else(|_| core::settings::AppSettings::default());
+
+            if current_settings.cloud.device_id.trim().is_empty() {
+                current_settings.cloud.device_id = default_device_id();
+                if let Err(err) = settings_arc.update_settings(current_settings.clone()) {
+                    tracing::warn!("[SETTINGS] Failed to persist device id: {err}");
+                }
+            }
 
             // History directory
             let history_base_dir = app_data_dir.join("archives").join("history");
@@ -180,8 +187,9 @@ pub fn run() {
             get_cloud_status,
             login_cloud,
             logout_cloud,
-            list_devices,
-            remove_device,
+            list_cloud_devices,
+            register_cloud_device,
+            remove_cloud_device,
             reconnect_cloud,
             update_cloud_mode,
             get_sync_status,

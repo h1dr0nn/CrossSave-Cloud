@@ -58,9 +58,9 @@ pub struct CloudVersionSummary {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CloudDevice {
-    pub device_id: String,
-    pub name: String,
-    pub last_sync: u64,
+  pub device_id: String,
+  pub platform: String,
+  pub last_seen: u64,
 }
 
 // =============================================================================
@@ -115,6 +115,12 @@ pub trait CloudBackend: Send + Sync {
     ) -> Result<(), CloudError>;
     fn ensure_device_id(&self) -> Result<String, CloudError>;
     async fn list_devices(&self, token: String) -> Result<Vec<CloudDevice>, CloudError>;
+    async fn register_device(
+        &self,
+        token: String,
+        device_id: String,
+        platform: String,
+    ) -> Result<(), CloudError>;
     async fn remove_device(&self, token: String, device_id: String) -> Result<(), CloudError>;
     fn get_device_id(&self) -> Result<String, CloudError>;
 }
@@ -165,6 +171,15 @@ impl CloudBackend for DisabledCloudBackend {
         Err(CloudError::Disabled)
     }
 
+    async fn register_device(
+        &self,
+        _token: String,
+        _device_id: String,
+        _platform: String,
+    ) -> Result<(), CloudError> {
+        Err(CloudError::Disabled)
+    }
+
     async fn remove_device(&self, _token: String, _device_id: String) -> Result<(), CloudError> {
         Err(CloudError::Disabled)
     }
@@ -195,8 +210,8 @@ struct LoginResponse {
 }
 
 #[derive(Deserialize)]
-struct RegisterDeviceResponse {
-    device_id: String,
+struct ListDevicesResponse {
+    devices: Vec<CloudDevice>,
 }
 
 impl HttpCloudBackend {
@@ -261,20 +276,40 @@ impl HttpCloudBackend {
         }
     }
 
-    async fn register_device(&self, token: &str) -> Result<String, CloudError> {
+    fn ensure_local_device_id(&self) -> Result<String, CloudError> {
+        let mut app_settings = self
+            .settings
+            .get_settings()
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+
+        if app_settings.cloud.device_id.trim().is_empty() {
+            app_settings.cloud.device_id = default_device_id();
+            self.settings
+                .update_settings(app_settings.clone())
+                .map_err(|e| CloudError::InvalidConfig(format!("settings save failed: {e}")))?;
+        }
+
+        Ok(app_settings.cloud.device_id)
+    }
+
+    async fn ensure_device_registered(&self) -> Result<String, CloudError> {
+        let device_id = self.ensure_local_device_id()?;
         let base_url = self.validate_base_url()?;
-        let name = std::env::var("HOSTNAME")
-            .ok()
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "Current Device".to_string());
+        let auth = self.get_auth_header()?;
+        let platform = std::env::consts::OS.to_string();
+
         let resp = self
             .client
             .post(format!("{}/device/register", base_url))
-            .header("Authorization", token)
-            .json(&serde_json::json!({ "name": name }))
+            .header("Authorization", auth)
+            .json(&serde_json::json!({ "device_id": device_id, "platform": platform }))
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
+
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(CloudError::Unauthorized("invalid token".into()));
+        }
 
         if !resp.status().is_success() {
             error!("{} device register failed: {}", self.log_tag, resp.status());
@@ -284,21 +319,7 @@ impl HttpCloudBackend {
             )));
         }
 
-        let parsed: RegisterDeviceResponse = resp
-            .json()
-            .await
-            .map_err(|e| CloudError::Serialization(e.to_string()))?;
-
-        let mut app_settings = self
-            .settings
-            .get_settings()
-            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
-        app_settings.cloud.device_id = parsed.device_id.clone();
-        self.settings
-            .update_settings(app_settings)
-            .map_err(|e| CloudError::InvalidConfig(format!("settings save failed: {e}")))?;
-
-        Ok(parsed.device_id)
+        Ok(device_id)
     }
 }
 
@@ -364,9 +385,15 @@ impl CloudBackend for HttpCloudBackend {
             )));
         }
 
+        let device_id = self
+            .ensure_device_registered()
+            .await
+            .map_err(|err| {
+                warn!("{} failed to register device: {}", self.log_tag, err);
+                err
+            })?;
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
-        let device_id = self.ensure_device_id()?;
 
         let archive_size = fs::metadata(&archive_path)
             .map_err(|e| CloudError::Io(e.to_string()))?
@@ -466,6 +493,7 @@ impl CloudBackend for HttpCloudBackend {
         version_id: String,
         target_path: PathBuf,
     ) -> Result<(), CloudError> {
+        self.ensure_device_registered().await?;
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
@@ -528,8 +556,7 @@ impl CloudBackend for HttpCloudBackend {
             return Ok(settings.cloud.device_id);
         }
 
-        let token = self.get_auth_header()?;
-        futures::executor::block_on(self.register_device(&token))
+        futures::executor::block_on(self.ensure_device_registered())
     }
 
     async fn list_devices(&self, token: String) -> Result<Vec<CloudDevice>, CloudError> {
@@ -553,9 +580,51 @@ impl CloudBackend for HttpCloudBackend {
             )));
         }
 
-        resp.json()
+        let parsed: ListDevicesResponse = resp
+            .json()
             .await
-            .map_err(|e| CloudError::Serialization(e.to_string()))
+            .map_err(|e| CloudError::Serialization(e.to_string()))?;
+
+        Ok(parsed.devices)
+    }
+
+    async fn register_device(
+        &self,
+        token: String,
+        device_id: String,
+        platform: String,
+    ) -> Result<(), CloudError> {
+        let base_url = self.validate_base_url()?;
+        let resp = self
+            .client
+            .post(format!("{}/device/register", base_url))
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&serde_json::json!({"device_id": device_id.clone(), "platform": platform.clone()}))
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
+
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(CloudError::Unauthorized("invalid token".into()));
+        }
+
+        if !resp.status().is_success() {
+            return Err(CloudError::NetworkError(format!(
+                "register device failed: {}",
+                resp.status()
+            )));
+        }
+
+        let mut app_settings = self
+            .settings
+            .get_settings()
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+        app_settings.cloud.device_id = device_id;
+        self.settings
+            .update_settings(app_settings)
+            .map_err(|e| CloudError::InvalidConfig(format!("settings save failed: {e}")))?;
+
+        Ok(())
     }
 
     async fn remove_device(&self, token: String, device_id: String) -> Result<(), CloudError> {

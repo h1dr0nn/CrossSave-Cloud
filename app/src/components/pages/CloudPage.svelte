@@ -198,7 +198,7 @@
   }
 
   async function removeDevice(device: CloudDevice) {
-    if (!confirm(`Remove device ${device.name}?`)) return;
+    if (!confirm(`Remove device ${device.device_id}?`)) return;
     try {
       await cloudStore.removeDevice(device.device_id);
       pushSuccess("Device removed");
@@ -456,10 +456,10 @@
                     {#each devices as device}
                       <div class="device-item">
                         <div class="device-details">
-                          <strong>{device.name}</strong>
+                          <strong>{device.platform || "unknown"}</strong>
                           <span class="device-meta"
-                            >Last sync: {new Date(
-                              (device.last_sync || 0) * 1000,
+                            >Last seen: {new Date(
+                              (device.last_seen || 0) * 1000,
                             ).toLocaleString()}</span
                           >
                           <span class="device-meta mono"

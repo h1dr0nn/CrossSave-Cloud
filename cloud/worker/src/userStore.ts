@@ -1,9 +1,4 @@
-import {
-  getUserDevicesKey,
-  getUserMetadataKey,
-  readJson,
-  writeJson
-} from "./storage";
+import { getUserDevicesKey, getUserMetadataKey, readJson, writeJson } from "./storage";
 
 export interface UserMetadata {
   user_id: string;
@@ -16,14 +11,11 @@ export interface UserMetadata {
 
 export interface DeviceInfo {
   device_id: string;
-  name?: string;
-  platform?: string;
+  platform: string;
   last_seen: number;
-  created_at: number;
 }
 
 export interface DevicesEntry {
-  user_id: string;
   devices: DeviceInfo[];
 }
 
@@ -74,14 +66,39 @@ export async function saveUserMetadata(env: { CROSSSAVE_R2: R2Bucket }, user: Us
   await updateEmailIndex(env.CROSSSAVE_R2, user.email, user.user_id);
 }
 
-export async function getDevices(env: { CROSSSAVE_R2: R2Bucket }, userId: string): Promise<DevicesEntry> {
+export async function loadUserDevices(env: { CROSSSAVE_R2: R2Bucket }, userId: string): Promise<DevicesEntry> {
   const existing = await readJson<DevicesEntry>(env.CROSSSAVE_R2, getUserDevicesKey(userId));
   if (existing) {
     return existing;
   }
-  return { user_id: userId, devices: [] };
+
+  const empty = { devices: [] as DeviceInfo[] };
+  await writeJson(env.CROSSSAVE_R2, getUserDevicesKey(userId), empty);
+  return empty;
 }
 
-export async function saveDevices(env: { CROSSSAVE_R2: R2Bucket }, devices: DevicesEntry): Promise<void> {
-  await writeJson(env.CROSSSAVE_R2, getUserDevicesKey(devices.user_id), devices);
+export async function saveUserDevices(env: { CROSSSAVE_R2: R2Bucket }, userId: string, devices: DevicesEntry): Promise<void> {
+  await writeJson(env.CROSSSAVE_R2, getUserDevicesKey(userId), devices);
+}
+
+export async function updateLastSeen(
+  env: { CROSSSAVE_R2: R2Bucket },
+  userId: string,
+  deviceId: string | undefined,
+  timestamp: number,
+  platform = "unknown"
+): Promise<void> {
+  if (!deviceId) {
+    return;
+  }
+
+  const devices = await loadUserDevices(env, userId);
+  const existing = devices.devices.find((device) => device.device_id === deviceId);
+  if (existing) {
+    existing.last_seen = timestamp;
+  } else {
+    devices.devices.push({ device_id: deviceId, platform, last_seen: timestamp });
+  }
+
+  await saveUserDevices(env, userId, devices);
 }
