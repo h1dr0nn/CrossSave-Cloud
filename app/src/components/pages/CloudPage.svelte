@@ -19,7 +19,12 @@
   // Login state
   let email = "";
   let password = "";
+  let confirmPassword = "";
   let loginError = "";
+  let passwordErrors: string[] = [];
+  let isSignupMode = false;
+  let rememberLogin = false;
+  let isLoggingIn = false;
 
   function goBack() {
     goto("/settings", { keepFocus: true, noScroll: true });
@@ -116,6 +121,17 @@
   }
 
   onMount(async () => {
+    // Load saved credentials if remember login was checked
+    const savedEmail = localStorage.getItem("cloud:savedEmail");
+    const savedPassword = localStorage.getItem("cloud:savedPassword");
+    const savedRemember = localStorage.getItem("cloud:rememberLogin");
+
+    if (savedEmail && savedPassword && savedRemember === "true") {
+      email = savedEmail;
+      password = savedPassword;
+      rememberLogin = true;
+    }
+
     await cloudStore.initialize();
     if (get(isLoggedIn)) {
       await initializeAfterLogin();
@@ -128,13 +144,106 @@
     await refreshDevices();
   }
 
+  // Password validation
+  function validatePassword(pwd: string): string[] {
+    const errors: string[] = [];
+
+    if (pwd.length < 8) {
+      errors.push("At least 8 characters");
+    }
+    if (!/[A-Z]/.test(pwd)) {
+      errors.push("At least one uppercase letter");
+    }
+    if (!/[a-z]/.test(pwd)) {
+      errors.push("At least one lowercase letter");
+    }
+    if (!/[0-9]/.test(pwd)) {
+      errors.push("At least one number");
+    }
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(pwd)) {
+      errors.push("At least one special character");
+    }
+
+    return errors;
+  }
+
+  // Update password errors when password changes in signup mode
+  $: if (isSignupMode && password) {
+    passwordErrors = validatePassword(password);
+  } else {
+    passwordErrors = [];
+  }
+
+  // Computed password validation checks for UI
+  $: hasMinLength = password.length >= 8;
+  $: hasUppercase = /[A-Z]/.test(password);
+  $: hasLowercase = /[a-z]/.test(password);
+  $: hasNumber = /[0-9]/.test(password);
+  $: hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
   async function handleLogin() {
     loginError = "";
-    const result = await cloudStore.login(email, password);
-    if (result.success) {
-      await initializeAfterLogin();
-    } else {
-      loginError = result.error ?? "Invalid credentials";
+    isLoggingIn = true;
+
+    try {
+      const result = await cloudStore.login(email, password);
+      if (result.success) {
+        // Save credentials if remember login is checked
+        if (rememberLogin) {
+          localStorage.setItem("cloud:savedEmail", email);
+          localStorage.setItem("cloud:savedPassword", password);
+          localStorage.setItem("cloud:rememberLogin", "true");
+        } else {
+          localStorage.removeItem("cloud:savedEmail");
+          localStorage.removeItem("cloud:savedPassword");
+          localStorage.removeItem("cloud:rememberLogin");
+        }
+
+        await initializeAfterLogin();
+        pushSuccess("Logged in successfully");
+      } else {
+        loginError = result.error ?? "Invalid credentials";
+      }
+    } finally {
+      isLoggingIn = false;
+    }
+  }
+
+  async function handleSignup() {
+    loginError = "";
+
+    // Validate password
+    const errors = validatePassword(password);
+    if (errors.length > 0) {
+      loginError = "Password does not meet requirements";
+      return;
+    }
+
+    // Check password confirmation
+    if (password !== confirmPassword) {
+      loginError = "Passwords do not match";
+      return;
+    }
+
+    isLoggingIn = true;
+
+    try {
+      const result = await cloudStore.signup(email, password);
+      if (result.success) {
+        // Save credentials if remember login is checked
+        if (rememberLogin) {
+          localStorage.setItem("cloud:savedEmail", email);
+          localStorage.setItem("cloud:savedPassword", password);
+          localStorage.setItem("cloud:rememberLogin", "true");
+        }
+
+        await initializeAfterLogin();
+        pushSuccess("Account created successfully");
+      } else {
+        loginError = result.error ?? "Signup failed";
+      }
+    } finally {
+      isLoggingIn = false;
     }
   }
 
@@ -142,6 +251,17 @@
     await cloudStore.logout();
     deviceId = "";
     devices = [];
+
+    // Clear saved credentials on logout
+    localStorage.removeItem("cloud:savedEmail");
+    localStorage.removeItem("cloud:savedPassword");
+    localStorage.removeItem("cloud:rememberLogin");
+
+    email = "";
+    password = "";
+    rememberLogin = false;
+
+    pushInfo("Logged out successfully");
   }
 
   async function loadCloudStatus() {
@@ -151,9 +271,7 @@
       onlineStatus = status.connected ? "online" : "offline";
     } catch (error) {
       loginError =
-        typeof error === "string"
-          ? error
-          : "Failed to load cloud status";
+        typeof error === "string" ? error : "Failed to load cloud status";
       pushError(loginError);
     }
   }
@@ -261,15 +379,23 @@
           <!-- Login Form -->
           <div class="section-group">
             <div class="section-header">
-              <p class="section-title">Sign In</p>
+              <p class="section-title">
+                {isSignupMode ? "Sign Up" : "Sign In"}
+              </p>
             </div>
             <div class="settings-card">
               <div class="card-content">
                 <p class="description">
-                  Connect to CrossSave Cloud to sync your saves
+                  {isSignupMode
+                    ? "Create an account to sync your saves across devices"
+                    : "Connect to CrossSave Cloud to sync your saves"}
                 </p>
 
-                <form on:submit|preventDefault={handleLogin}>
+                <form
+                  on:submit|preventDefault={isSignupMode
+                    ? handleSignup
+                    : handleLogin}
+                >
                   <div class="input-stack">
                     <div class="form-group">
                       <label for="email">Email</label>
@@ -279,6 +405,7 @@
                         bind:value={email}
                         placeholder="your@email.com"
                         required
+                        disabled={isLoggingIn}
                       />
                     </div>
 
@@ -290,17 +417,103 @@
                         bind:value={password}
                         placeholder="••••••••"
                         required
+                        disabled={isLoggingIn}
                       />
+                    </div>
+
+                    {#if isSignupMode}
+                      <div class="form-group">
+                        <label for="confirm-password">Confirm Password</label>
+                        <input
+                          id="confirm-password"
+                          type="password"
+                          bind:value={confirmPassword}
+                          placeholder="••••••••"
+                          required
+                          disabled={isLoggingIn}
+                        />
+                      </div>
+
+                      {#if password}
+                        <div class="password-requirements">
+                          <p class="requirements-title">Password must have:</p>
+                          <ul class="requirements-list">
+                            <li class:valid={hasMinLength}>
+                              <span class="check-icon"
+                                >{hasMinLength ? "✓" : "○"}</span
+                              >
+                              At least 8 characters
+                            </li>
+                            <li class:valid={hasUppercase}>
+                              <span class="check-icon"
+                                >{hasUppercase ? "✓" : "○"}</span
+                              >
+                              One uppercase letter
+                            </li>
+                            <li class:valid={hasLowercase}>
+                              <span class="check-icon"
+                                >{hasLowercase ? "✓" : "○"}</span
+                              >
+                              One lowercase letter
+                            </li>
+                            <li class:valid={hasNumber}>
+                              <span class="check-icon"
+                                >{hasNumber ? "✓" : "○"}</span
+                              >
+                              One number
+                            </li>
+                            <li class:valid={hasSpecialChar}>
+                              <span class="check-icon"
+                                >{hasSpecialChar ? "✓" : "○"}</span
+                              >
+                              One special character
+                            </li>
+                          </ul>
+                        </div>
+                      {/if}
+                    {/if}
+
+                    <div class="form-group checkbox-group">
+                      <label class="checkbox-label">
+                        <input
+                          type="checkbox"
+                          bind:checked={rememberLogin}
+                          disabled={isLoggingIn}
+                        />
+                        <span>Remember login</span>
+                      </label>
                     </div>
                   </div>
 
-                {#if loginError}
-                  <p class="error">{loginError}</p>
-                {/if}
+                  {#if loginError}
+                    <p class="error">{loginError}</p>
+                  {/if}
 
                   <div class="form-actions">
-                    <button type="submit" class="btn-primary btn-full">
-                      Sign In
+                    <button
+                      type="submit"
+                      class="btn-primary btn-full"
+                      disabled={isLoggingIn}
+                    >
+                      {isLoggingIn
+                        ? "Please wait..."
+                        : isSignupMode
+                          ? "Create Account"
+                          : "Sign In"}
+                    </button>
+
+                    <button
+                      type="button"
+                      class="btn-secondary btn-full"
+                      on:click={() => {
+                        isSignupMode = !isSignupMode;
+                        loginError = "";
+                      }}
+                      disabled={isLoggingIn}
+                    >
+                      {isSignupMode
+                        ? "Already have an account? Sign In"
+                        : "Need an account? Sign Up"}
                     </button>
                   </div>
                 </form>
@@ -330,7 +543,9 @@
                   <div class="setting-content">
                     <p class="setting-label">Logged in as</p>
                     <p class="setting-value">{$userEmail || "Cloud account"}</p>
-                    <p class="setting-meta">Device ID: {deviceId || "Unknown"}</p>
+                    <p class="setting-meta">
+                      Device ID: {deviceId || "Unknown"}
+                    </p>
                   </div>
                 </div>
                 <span
@@ -378,7 +593,7 @@
                   {#if syncStatus.last_sync}
                     <p class="last-sync">
                       Last synced: {new Date(
-                        syncStatus.last_sync,
+                        syncStatus.last_sync
                       ).toLocaleString()}
                     </p>
                   {/if}
@@ -459,7 +674,7 @@
                           <strong>{device.platform || "unknown"}</strong>
                           <span class="device-meta"
                             >Last seen: {new Date(
-                              (device.last_seen || 0) * 1000,
+                              (device.last_seen || 0) * 1000
                             ).toLocaleString()}</span
                           >
                           <span class="device-meta mono"
@@ -533,7 +748,10 @@
                           </div>
                           <div class="version-meta">
                             <span
-                              >Device: {version.device_id.substring(0, 8)}...</span
+                              >Device: {version.device_id.substring(
+                                0,
+                                8
+                              )}...</span
                             >
                             {#if version.device_id === deviceId}
                               <span class="tag">This device</span>
@@ -543,8 +761,7 @@
                           </div>
                           {#if downloadState.versionId === version.version_id}
                             <div class="progress-bar small">
-                              <span
-                                style={`width: ${downloadState.progress}%`}
+                              <span style={`width: ${downloadState.progress}%`}
                               ></span>
                             </div>
                             {#if downloadState.error}
@@ -700,8 +917,81 @@
     background: var(--surface);
   }
 
+  .checkbox-group {
+    padding-top: 4px;
+  }
+
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-weight: 400;
+  }
+
+  .checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
+  .checkbox-label span {
+    user-select: none;
+  }
+
+  .password-requirements {
+    padding: 12px;
+    background: color-mix(in srgb, var(--surface-muted) 50%, transparent);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-top: 8px;
+  }
+
+  .requirements-title {
+    margin: 0 0 8px 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .requirements-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 6px;
+  }
+
+  .requirements-list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    transition: color 0.2s;
+  }
+
+  .requirements-list li.valid {
+    color: var(--success, #10b981);
+  }
+
+  .requirements-list li.valid .check-icon {
+    color: var(--success, #10b981);
+    font-weight: bold;
+  }
+
+  .check-icon {
+    font-size: 1rem;
+    width: 16px;
+    text-align: center;
+    color: var(--text-muted);
+  }
+
   .form-actions {
     margin-top: 12px;
+    display: grid;
+    gap: 10px;
   }
 
   /* Buttons */

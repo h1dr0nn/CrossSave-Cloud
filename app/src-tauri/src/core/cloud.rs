@@ -38,7 +38,7 @@ impl Default for CloudConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            base_url: "https://api.crosssave.local".to_string(),
+            base_url: "https://crosssave-official-cloud.hdrn151.workers.dev".to_string(),
             api_key: String::new(),
             device_id: String::new(),
             device_name: String::new(),
