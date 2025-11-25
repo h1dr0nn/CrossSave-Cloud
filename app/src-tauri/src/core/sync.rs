@@ -17,12 +17,12 @@ use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
 use crate::core::cloud::{
-    ensure_device_identity, log_tag, CloudBackend, CloudMode, CloudVersionSummary, UploadRequest,
+    ensure_device_identity, log_tag, CloudBackend, CloudVersionSummary, UploadRequest,
     UploadUrlResponse,
 };
 use crate::core::history::{HistoryEntry, HistoryManager};
 use crate::core::packager::SaveMetadata;
-use crate::core::settings::SettingsManager;
+use crate::core::settings::{CloudMode, SettingsManager};
 use zip::ZipArchive;
 
 // ============================================================================
