@@ -11,6 +11,7 @@ use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use reqwest::{header::CONTENT_TYPE, Client};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::AsyncWriteExt;
@@ -46,15 +47,13 @@ pub enum SyncDecision {
 /// - If cloud has no versions -> Upload local (if exists)
 /// - If local has no history -> Download latest cloud
 /// - If both exist:
-///   - Compare timestamps.
-///   - If difference < 2s AND hashes differ -> Conflict
-///   - If local > cloud -> Upload
-///   - If cloud > local -> Download
-///   - If equal -> Noop
+///   - If hashes match -> Noop
+///   - If |timestamp difference| <= 2s -> Conflict
+///   - Otherwise latest timestamp wins (upload if local is newer, download if cloud is newer)
 pub fn determine_sync_action(
     local_entry: Option<&HistoryEntry>,
     cloud_versions: &[CloudVersionSummary],
-    current_device: &str,
+    _current_device: &str,
 ) -> SyncDecision {
     let latest_cloud = cloud_versions.iter().max_by_key(|v| v.timestamp);
 
@@ -63,10 +62,10 @@ pub fn determine_sync_action(
         (None, Some(cloud)) => SyncDecision::Download(cloud.version_id.clone()),
         (None, None) => SyncDecision::Noop,
         (Some(local), Some(cloud)) => {
-            let local_time = local.metadata.timestamp;
+            let local_time = local.metadata.timestamp as u64;
             let cloud_time = cloud.timestamp;
 
-            if cloud.hash == local.metadata.hash {
+            if cloud.sha256 == local.metadata.hash {
                 return SyncDecision::Noop;
             }
 
@@ -77,9 +76,8 @@ pub fn determine_sync_action(
             };
 
             let conflict_window = time_diff <= 2;
-            let different_device = !cloud.device_id.is_empty() && cloud.device_id != current_device;
 
-            if conflict_window && different_device {
+            if conflict_window {
                 return SyncDecision::Conflict;
             }
 
@@ -810,10 +808,21 @@ impl SyncManager {
 
                     // Get Cloud State
                     let backend = cloud_clone.lock().await;
-                    let cloud_versions = backend
-                        .list_versions(game_id.clone(), Some(1))
-                        .await
-                        .unwrap_or_default();
+                    let cloud_versions = match backend.list_versions(game_id.clone(), Some(1)).await
+                    {
+                        Ok(versions) => versions,
+                        Err(err) => {
+                            warn!(
+                                "{} [SYNC] Failed to list versions for {}: {}",
+                                tag, game_id, err
+                            );
+                            let _ = app_handle_clone.emit(
+                                "sync://cloud-list-error",
+                                json!({ "gameId": game_id, "message": err.to_string() }),
+                            );
+                            continue;
+                        }
+                    };
                     drop(backend); // Release lock
 
                     // Decide

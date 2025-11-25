@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tracing::{error, info};
 
 use crate::core::cloud::{
     ensure_device_identity, log_tag, CloudBackend, CloudDevice, CloudError, CloudVersionSummary,
@@ -415,26 +416,66 @@ pub async fn remove_cloud_device(
     }
 }
 
-/// Lists available save versions for a game from the cloud.
+/// Lists available save versions for a game from the cloud using metadata.
 ///
-/// Returns a list of `CloudVersionSummary` objects, optionally limited by `limit`.
+/// Returns a list of `CloudVersionSummary` objects sorted by timestamp.
 #[tauri::command]
 pub async fn list_cloud_versions(
+    app: AppHandle,
     game_id: String,
-    limit: Option<u32>,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<Vec<CloudVersionSummary>, String> {
-    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+    let settings_snapshot = settings
+        .get_settings()
+        .map_err(|e| format!("Failed to load settings: {e}"))?;
 
-    if ensure_config(&cloud, None).await.is_err() {
-        return Err("Cloud not configured".into());
+    if settings_snapshot.cloud_mode == CloudMode::Off {
+        return Err("cloud_not_configured".into());
     }
+
+    let (base_url, token) = match settings_snapshot.cloud_mode {
+        CloudMode::Official => (
+            settings_snapshot.cloud.base_url.clone(),
+            settings_snapshot.cloud.api_key.clone(),
+        ),
+        CloudMode::SelfHost => (
+            settings_snapshot.self_host.api_server.clone(),
+            settings_snapshot.self_host.access_key.clone(),
+        ),
+        CloudMode::Off => (String::new(), String::new()),
+    };
+
+    if base_url.trim().is_empty() || token.trim().is_empty() {
+        return Err("cloud_not_configured".into());
+    }
+
     let backend = cloud.lock().await;
-    backend
-        .list_versions(game_id, limit.map(|l| l as usize))
-        .await
-        .map_err(cloud_error_to_string)
+    match backend.list_versions(game_id.clone(), None).await {
+        Ok(versions) => {
+            info!(
+                "{} list_versions game_id={} count={}",
+                log_tag(&settings_snapshot.cloud_mode),
+                game_id,
+                versions.len()
+            );
+            Ok(versions)
+        }
+        Err(err) => {
+            let message = cloud_error_to_string(err);
+            error!(
+                "{} list_versions failed game_id={} message={}",
+                log_tag(&settings_snapshot.cloud_mode),
+                game_id,
+                message
+            );
+            let _ = app.emit(
+                "sync://cloud-list-error",
+                serde_json::json!({ "gameId": game_id, "message": message }),
+            );
+            Err(message)
+        }
+    }
 }
 
 #[tauri::command]

@@ -1,5 +1,12 @@
 import { errorResponse, jsonResponse } from "./utils";
-import { ensureUserScaffold, getSaveObjectKey, getUserBaseKey, readJson, writeJson } from "./storage";
+import {
+  ensureUserScaffold,
+  getSaveObjectKey,
+  getUserBaseKey,
+  getUserMetadataKey,
+  readJson,
+  writeJson,
+} from "./storage";
 import { hashPassword, verifyPassword } from "./security";
 import {
   getUserByEmail,
@@ -409,6 +416,50 @@ async function handleDownloadUrl(
   }
 }
 
+async function handleListSaves(
+  request: Request,
+  env: Env,
+  auth: AuthContext
+): Promise<Response> {
+  const body = await parseJsonBody(request);
+  if (!body) {
+    return errorResponse(400, "invalid_json");
+  }
+
+  const gameId = typeof body.game_id === "string" ? body.game_id.trim() : "";
+  if (!gameId) {
+    return errorResponse(400, "invalid_request");
+  }
+
+  const metadataKey = getUserMetadataKey(auth.user_id);
+  const head = await env.CROSSSAVE_R2.head(metadataKey);
+  if (!head) {
+    return jsonResponse({ ok: true, versions: [] });
+  }
+
+  let metadata: UserSaveMetadata;
+  try {
+    metadata = await loadUserMetadata(env.CROSSSAVE_R2, auth.user_id);
+  } catch (error) {
+    console.error("[worker] failed to parse metadata", error);
+    return errorResponse(500, "metadata_corrupted");
+  }
+
+  const versions = metadata.versions
+    .filter((entry) => entry.game_id === gameId)
+    .map((entry) => ({
+      version_id: entry.version_id,
+      size_bytes: entry.size_bytes,
+      timestamp: entry.timestamp,
+      device_id: entry.device_id,
+      sha256: entry.sha256,
+      file_list: Array.isArray(entry.file_list) ? entry.file_list : [],
+    }))
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  return jsonResponse({ ok: true, game_id: gameId, versions });
+}
+
 async function handleRegisterDevice(request: Request, env: Env, auth: AuthContext): Promise<Response> {
   const body = await parseJsonBody(request);
   if (!body) {
@@ -526,6 +577,14 @@ export default {
         return errorResponse(401, "unauthorized");
       }
       return handleDownloadUrl(request, env, auth);
+    }
+
+    if (path === "/save/list" && request.method === "POST") {
+      const auth = await requireAuth(env, request);
+      if (!auth) {
+        return errorResponse(401, "unauthorized");
+      }
+      return handleListSaves(request, env, auth);
     }
 
     if (path === "/device/list" && request.method === "GET") {

@@ -53,15 +53,12 @@ impl Default for CloudConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CloudVersionSummary {
-    pub game_id: String,
-    pub emulator_id: String,
     pub version_id: String,
     pub timestamp: u64,
     pub size_bytes: u64,
-    pub hash: String,
     pub device_id: String,
     pub file_list: Vec<String>,
-    pub total_size_bytes: u64,
+    pub sha256: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -641,15 +638,12 @@ impl CloudBackend for HttpCloudBackend {
         self.notify_upload_complete(upload_request.clone()).await?;
 
         Ok(CloudVersionSummary {
-            game_id: upload_request.game_id,
-            emulator_id: metadata.emulator_id,
             version_id: upload_request.version_id,
             timestamp: metadata.timestamp,
             size_bytes: upload_request.size_bytes,
-            hash,
             device_id,
             file_list: upload_request.file_list,
-            total_size_bytes: archive_size,
+            sha256: hash,
         })
     }
 
@@ -762,22 +756,18 @@ impl CloudBackend for HttpCloudBackend {
     ) -> Result<Vec<CloudVersionSummary>, CloudError> {
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
-        let mut request = self
-            .client
-            .get(format!("{}/save/list", base_url))
-            .header("Authorization", auth)
-            .query(&[("game_id", game_id.clone())]);
-        if let Some(limit) = limit {
-            request = request.query(&[("limit", limit.to_string())]);
-        }
 
-        let resp = request
+        let resp = self
+            .client
+            .post(format!("{}/save/list", base_url))
+            .header("Authorization", auth)
+            .json(&serde_json::json!({ "game_id": game_id.clone() }))
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
-        if resp.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(Vec::new());
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(CloudError::Unauthorized("invalid token".into()));
         }
 
         if !resp.status().is_success() {
@@ -787,9 +777,64 @@ impl CloudBackend for HttpCloudBackend {
             )));
         }
 
-        resp.json()
+        #[derive(Deserialize)]
+        struct SaveListVersion {
+            version_id: String,
+            size_bytes: u64,
+            timestamp: u64,
+            #[serde(default)]
+            device_id: String,
+            sha256: String,
+            #[serde(default)]
+            file_list: Vec<String>,
+        }
+
+        #[derive(Deserialize)]
+        struct SaveListResponse {
+            ok: bool,
+            #[serde(default)]
+            versions: Vec<SaveListVersion>,
+            #[serde(default)]
+            error: Option<String>,
+        }
+
+        let parsed: SaveListResponse = resp
+            .json()
             .await
-            .map_err(|e| CloudError::Serialization(e.to_string()))
+            .map_err(|e| CloudError::Serialization(e.to_string()))?;
+
+        if !parsed.ok {
+            let message = parsed.error.unwrap_or_else(|| "list_failed".to_string());
+            error!("{} list_versions failed: {}", self.log_tag, message);
+            return Err(CloudError::NetworkError(message));
+        }
+
+        let mut versions: Vec<CloudVersionSummary> = parsed
+            .versions
+            .into_iter()
+            .map(|entry| CloudVersionSummary {
+                version_id: entry.version_id,
+                timestamp: entry.timestamp,
+                size_bytes: entry.size_bytes,
+                device_id: entry.device_id,
+                file_list: entry.file_list,
+                sha256: entry.sha256,
+            })
+            .collect();
+
+        versions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        if let Some(limit) = limit {
+            versions.truncate(limit.min(versions.len()));
+        }
+
+        info!(
+            "{} list_versions game_id={} count={}",
+            self.log_tag,
+            game_id,
+            versions.len()
+        );
+
+        Ok(versions)
     }
 
     async fn download_version(
