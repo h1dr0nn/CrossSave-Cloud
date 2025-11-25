@@ -24,7 +24,10 @@ pub struct CloudConfig {
     pub base_url: String,
     pub api_key: String,
     pub device_id: String,
+    pub device_name: String,
+    pub platform: String,
     pub timeout_seconds: u64,
+    pub has_registered_device: bool,
 }
 
 impl Default for CloudConfig {
@@ -34,7 +37,10 @@ impl Default for CloudConfig {
             base_url: "https://api.crosssave.local".to_string(),
             api_key: String::new(),
             device_id: String::new(),
+            device_name: String::new(),
+            platform: String::new(),
             timeout_seconds: 30,
+            has_registered_device: false,
         }
     }
 }
@@ -60,6 +66,7 @@ pub struct CloudVersionSummary {
 pub struct CloudDevice {
     pub device_id: String,
     pub platform: String,
+    pub device_name: String,
     pub last_seen: u64,
 }
 
@@ -70,6 +77,7 @@ pub struct UploadRequest {
     pub size_bytes: u64,
     pub sha256: String,
     pub file_list: Vec<String>,
+    pub device_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -141,6 +149,7 @@ pub trait CloudBackend: Send + Sync {
         token: String,
         device_id: String,
         platform: String,
+        device_name: String,
     ) -> Result<(), CloudError>;
     async fn remove_device(&self, token: String, device_id: String) -> Result<(), CloudError>;
     fn get_device_id(&self) -> Result<String, CloudError>;
@@ -208,6 +217,7 @@ impl CloudBackend for DisabledCloudBackend {
         _token: String,
         _device_id: String,
         _platform: String,
+        _device_name: String,
     ) -> Result<(), CloudError> {
         Err(CloudError::Disabled)
     }
@@ -308,33 +318,55 @@ impl HttpCloudBackend {
         }
     }
 
-    fn ensure_local_device_id(&self) -> Result<String, CloudError> {
+    fn ensure_local_device_identity(&self) -> Result<(String, String, String), CloudError> {
         let mut app_settings = self
             .settings
             .get_settings()
             .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
 
+        let mut updated = false;
         if app_settings.cloud.device_id.trim().is_empty() {
             app_settings.cloud.device_id = default_device_id();
+            updated = true;
+        }
+
+        if app_settings.cloud.platform.trim().is_empty() {
+            app_settings.cloud.platform = std::env::consts::OS.to_string();
+            updated = true;
+        }
+
+        if app_settings.cloud.device_name.trim().is_empty() {
+            app_settings.cloud.device_name = default_device_name(&app_settings.cloud.platform);
+            updated = true;
+        }
+
+        if updated {
             self.settings
                 .update_settings(app_settings.clone())
                 .map_err(|e| CloudError::InvalidConfig(format!("settings save failed: {e}")))?;
         }
 
-        Ok(app_settings.cloud.device_id)
+        Ok((
+            app_settings.cloud.device_id,
+            app_settings.cloud.platform,
+            app_settings.cloud.device_name,
+        ))
     }
 
     async fn ensure_device_registered(&self) -> Result<String, CloudError> {
-        let device_id = self.ensure_local_device_id()?;
+        let (device_id, platform, device_name) = self.ensure_local_device_identity()?;
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
-        let platform = std::env::consts::OS.to_string();
 
         let resp = self
             .client
             .post(format!("{}/device/register", base_url))
             .header("Authorization", auth)
-            .json(&serde_json::json!({ "device_id": device_id, "platform": platform }))
+            .json(&serde_json::json!({
+                "device_id": device_id,
+                "platform": platform,
+                "device_name": device_name,
+            }))
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -351,6 +383,15 @@ impl HttpCloudBackend {
             )));
         }
 
+        let mut app_settings = self
+            .settings
+            .get_settings()
+            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+        if !app_settings.cloud.has_registered_device {
+            app_settings.cloud.has_registered_device = true;
+            let _ = self.settings.update_settings(app_settings);
+        }
+
         Ok(device_id)
     }
 }
@@ -360,10 +401,17 @@ impl CloudBackend for HttpCloudBackend {
     async fn login(&self, email: String, password: String) -> Result<String, CloudError> {
         info!("{} Attempting login", self.log_tag);
         let base_url = self.validate_base_url()?;
+        let (device_id, platform, device_name) = self.ensure_local_device_identity()?;
         let resp = self
             .client
             .post(format!("{}/login", base_url))
-            .json(&serde_json::json!({ "email": email, "password": password }))
+            .json(&serde_json::json!({
+                "email": email,
+                "password": password,
+                "device_id": device_id,
+                "platform": platform,
+                "device_name": device_name,
+            }))
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -393,6 +441,14 @@ impl CloudBackend for HttpCloudBackend {
         app_settings.cloud.api_key = parsed.token.clone();
         if let Some(device) = parsed.device_id.clone() {
             app_settings.cloud.device_id = device;
+        } else {
+            app_settings.cloud.device_id = device_id;
+        }
+        if app_settings.cloud.platform.trim().is_empty() {
+            app_settings.cloud.platform = platform;
+        }
+        if app_settings.cloud.device_name.trim().is_empty() {
+            app_settings.cloud.device_name = device_name;
         }
         self.settings
             .update_settings(app_settings)
@@ -433,6 +489,7 @@ impl CloudBackend for HttpCloudBackend {
             size_bytes: archive_size,
             sha256: hash.clone(),
             file_list: metadata.file_list.clone(),
+            device_id: Some(device_id.clone()),
         };
 
         let signed = self.request_upload_url(upload_request.clone()).await?;
@@ -478,6 +535,9 @@ impl CloudBackend for HttpCloudBackend {
         &self,
         payload: UploadRequest,
     ) -> Result<UploadUrlResponse, CloudError> {
+        let device_id = self.ensure_device_registered().await?;
+        let mut payload = payload;
+        payload.device_id = Some(device_id);
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
@@ -510,6 +570,9 @@ impl CloudBackend for HttpCloudBackend {
     }
 
     async fn notify_upload_complete(&self, payload: UploadRequest) -> Result<(), CloudError> {
+        let device_id = self.ensure_device_registered().await?;
+        let mut payload = payload;
+        payload.device_id = Some(device_id);
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
@@ -638,11 +701,19 @@ impl CloudBackend for HttpCloudBackend {
             return Err(CloudError::NotEnabled);
         }
 
-        if !settings.cloud.device_id.trim().is_empty() {
-            return Ok(settings.cloud.device_id);
+        let (device_id, _, _) = self.ensure_local_device_identity()?;
+
+        if device_id.trim().is_empty() {
+            return Err(CloudError::InvalidConfig("device_id missing".into()));
         }
 
-        futures::executor::block_on(self.ensure_device_registered())
+        if settings.cloud.device_id.trim().is_empty() {
+            let mut updated = settings.clone();
+            updated.cloud.device_id = device_id.clone();
+            let _ = self.settings.update_settings(updated);
+        }
+
+        Ok(device_id)
     }
 
     async fn list_devices(&self, token: String) -> Result<Vec<CloudDevice>, CloudError> {
@@ -679,15 +750,18 @@ impl CloudBackend for HttpCloudBackend {
         token: String,
         device_id: String,
         platform: String,
+        device_name: String,
     ) -> Result<(), CloudError> {
         let base_url = self.validate_base_url()?;
         let resp = self
             .client
             .post(format!("{}/device/register", base_url))
             .header("Authorization", format!("Bearer {}", token))
-            .json(
-                &serde_json::json!({"device_id": device_id.clone(), "platform": platform.clone()}),
-            )
+            .json(&serde_json::json!({
+                "device_id": device_id.clone(),
+                "platform": platform.clone(),
+                "device_name": device_name.clone(),
+            }))
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -708,6 +782,13 @@ impl CloudBackend for HttpCloudBackend {
             .get_settings()
             .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
         app_settings.cloud.device_id = device_id;
+        if app_settings.cloud.platform.trim().is_empty() {
+            app_settings.cloud.platform = platform;
+        }
+        if app_settings.cloud.device_name.trim().is_empty() {
+            app_settings.cloud.device_name = device_name;
+        }
+        app_settings.cloud.has_registered_device = true;
         self.settings
             .update_settings(app_settings)
             .map_err(|e| CloudError::InvalidConfig(format!("settings save failed: {e}")))?;
@@ -766,6 +847,18 @@ impl CloudBackend for HttpCloudBackend {
 
 pub fn default_device_id() -> String {
     Uuid::new_v4().to_string()
+}
+
+pub fn default_device_name(platform: &str) -> String {
+    let label = match platform.to_lowercase().as_str() {
+        "macos" | "mac" => "Mac Desktop",
+        "windows" => "Windows PC",
+        "linux" => "Linux Desktop",
+        "android" => "Android Device",
+        "ios" => "iOS Device",
+        other => return format!("{} device", other),
+    };
+    label.to_string()
 }
 
 fn calculate_sha256(path: &PathBuf) -> Result<String, CloudError> {

@@ -120,7 +120,11 @@ struct UploadCompletePayload {
 #[derive(Clone, Debug, Serialize)]
 struct UploadErrorPayload {
     version_id: String,
+    stage: String,
+    reason: String,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<u16>,
 }
 
 // ...
@@ -304,7 +308,7 @@ impl UploadQueue {
                 self.save_to_disk().await;
 
                 // Perform Upload
-                let result = self.perform_upload(&job, &cloud).await;
+                let result = self.perform_upload(&job, &cloud, &settings).await;
 
                 match result {
                     Ok(_) => {
@@ -350,23 +354,110 @@ impl UploadQueue {
         &self,
         job: &UploadJob,
         cloud: &Arc<Mutex<Box<dyn CloudBackend + Send>>>,
+        settings: &Arc<SettingsManager>,
     ) -> Result<(), String> {
-        let emit_error = |message: String, app_handle: &AppHandle, version_id: &String| {
-            let _ = app_handle.emit(
-                "sync://upload-error",
-                UploadErrorPayload {
-                    version_id: version_id.clone(),
-                    message: message.clone(),
-                },
-            );
-            message
+        let emit_error = |payload: UploadErrorPayload, app_handle: &AppHandle| {
+            let _ = app_handle.emit("sync://upload-error", payload.clone());
+            payload.message
         };
 
-        let hash = calculate_sha256(&job.archive_path)
-            .map_err(|e| emit_error(e.to_string(), &self.app_handle, &job.version_id))?;
+        let settings_snapshot = settings.get_settings().map_err(|e| {
+            emit_error(
+                UploadErrorPayload {
+                    version_id: job.version_id.clone(),
+                    stage: "preflight".to_string(),
+                    reason: "missing_config".to_string(),
+                    message: e.to_string(),
+                    status: None,
+                },
+                &self.app_handle,
+            )
+        })?;
+
+        let base_url = match settings_snapshot.cloud_mode {
+            crate::core::settings::CloudMode::SelfHost => {
+                settings_snapshot.self_host.api_server.clone()
+            }
+            _ => settings_snapshot.cloud.base_url.clone(),
+        };
+
+        if settings_snapshot.cloud_mode == crate::core::settings::CloudMode::Off
+            || base_url.trim().is_empty()
+        {
+            return Err(emit_error(
+                UploadErrorPayload {
+                    version_id: job.version_id.clone(),
+                    stage: "preflight".to_string(),
+                    reason: "missing_config".to_string(),
+                    message: "Cloud sync is not configured.".to_string(),
+                    status: None,
+                },
+                &self.app_handle,
+            ));
+        }
+
+        let token_missing = match settings_snapshot.cloud_mode {
+            crate::core::settings::CloudMode::SelfHost => {
+                settings_snapshot.self_host.access_key.trim().is_empty()
+            }
+            _ => settings_snapshot.cloud.api_key.trim().is_empty(),
+        };
+
+        if token_missing {
+            return Err(emit_error(
+                UploadErrorPayload {
+                    version_id: job.version_id.clone(),
+                    stage: "preflight".to_string(),
+                    reason: "missing_config".to_string(),
+                    message: "Cloud sync is not configured.".to_string(),
+                    status: None,
+                },
+                &self.app_handle,
+            ));
+        }
+
+        let hash = calculate_sha256(&job.archive_path).map_err(|e| {
+            emit_error(
+                UploadErrorPayload {
+                    version_id: job.version_id.clone(),
+                    stage: "preflight".to_string(),
+                    reason: "io".to_string(),
+                    message: e.to_string(),
+                    status: None,
+                },
+                &self.app_handle,
+            )
+        })?;
         let size_bytes = fs::metadata(&job.archive_path)
-            .map_err(|e| emit_error(e.to_string(), &self.app_handle, &job.version_id))?
+            .map_err(|e| {
+                emit_error(
+                    UploadErrorPayload {
+                        version_id: job.version_id.clone(),
+                        stage: "preflight".to_string(),
+                        reason: "io".to_string(),
+                        message: e.to_string(),
+                        status: None,
+                    },
+                    &self.app_handle,
+                )
+            })?
             .len();
+
+        let device_id = {
+            let backend = cloud.lock().await;
+            backend.ensure_device_id().map_err(|e| {
+                emit_error(
+                    UploadErrorPayload {
+                        version_id: job.version_id.clone(),
+                        stage: "preflight".to_string(),
+                        reason: "missing_config".to_string(),
+                        message: e.to_string(),
+                        status: None,
+                    },
+                    &self.app_handle,
+                )
+            })?
+        };
 
         let payload = UploadRequest {
             game_id: job.game_id.clone(),
@@ -374,6 +465,7 @@ impl UploadQueue {
             size_bytes,
             sha256: hash.clone(),
             file_list: job.metadata.file_list.clone(),
+            device_id: Some(device_id),
         };
 
         let start_progress = UploadProgressPayload {
@@ -390,28 +482,68 @@ impl UploadQueue {
                 Ok(url) => url,
                 Err(err) => {
                     return Err(emit_error(
-                        err.to_string(),
+                        UploadErrorPayload {
+                            version_id: payload.version_id.clone(),
+                            stage: "request_url".to_string(),
+                            reason: "backend_error".to_string(),
+                            message: err.to_string(),
+                            status: None,
+                        },
                         &self.app_handle,
-                        &payload.version_id,
                     ));
                 }
             }
         };
 
-        let archive_bytes = fs::read(&job.archive_path)
-            .map_err(|e| emit_error(e.to_string(), &self.app_handle, &job.version_id))?;
+        let archive_bytes = fs::read(&job.archive_path).map_err(|e| {
+            emit_error(
+                UploadErrorPayload {
+                    version_id: job.version_id.clone(),
+                    stage: "upload".to_string(),
+                    reason: "io".to_string(),
+                    message: e.to_string(),
+                    status: None,
+                },
+                &self.app_handle,
+            )
+        })?;
         let client = Client::new();
         let put_resp = client
             .put(&signed.upload_url)
             .header(CONTENT_TYPE, "application/zip")
             .body(archive_bytes)
             .send()
-            .await
-            .map_err(|e| e.to_string())?;
+            .await;
+
+        let put_resp = match put_resp {
+            Ok(resp) => resp,
+            Err(err) => {
+                return Err(emit_error(
+                    UploadErrorPayload {
+                        version_id: payload.version_id.clone(),
+                        stage: "upload".to_string(),
+                        reason: "transport_error".to_string(),
+                        message: err.to_string(),
+                        status: None,
+                    },
+                    &self.app_handle,
+                ));
+            }
+        };
 
         if !put_resp.status().is_success() {
+            let status = put_resp.status().as_u16();
             let message = format!("upload failed: {}", put_resp.status());
-            return Err(emit_error(message, &self.app_handle, &payload.version_id));
+            return Err(emit_error(
+                UploadErrorPayload {
+                    version_id: payload.version_id.clone(),
+                    stage: "upload".to_string(),
+                    reason: "http_status".to_string(),
+                    message,
+                    status: Some(status),
+                },
+                &self.app_handle,
+            ));
         }
 
         let mid_progress = UploadProgressPayload {
@@ -426,9 +558,14 @@ impl UploadQueue {
             let backend = cloud.lock().await;
             if let Err(err) = backend.notify_upload_complete(payload.clone()).await {
                 return Err(emit_error(
-                    err.to_string(),
+                    UploadErrorPayload {
+                        version_id: payload.version_id.clone(),
+                        stage: "notify".to_string(),
+                        reason: "backend_error".to_string(),
+                        message: err.to_string(),
+                        status: None,
+                    },
                     &self.app_handle,
-                    &payload.version_id,
                 ));
             }
         }

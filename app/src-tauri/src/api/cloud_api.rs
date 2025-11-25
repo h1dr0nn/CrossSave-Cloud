@@ -148,12 +148,14 @@ pub async fn get_upload_url(
     ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
 
     let backend = cloud.lock().await;
+    let device_id = backend.ensure_device_id().map_err(cloud_error_to_string)?;
     let payload = UploadRequest {
         game_id,
         version_id,
         size_bytes: metadata.size_bytes,
         sha256: metadata.sha256,
         file_list: metadata.file_list,
+        device_id: Some(device_id),
     };
 
     backend
@@ -173,12 +175,14 @@ pub async fn notify_upload(
     ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
 
     let backend = cloud.lock().await;
+    let device_id = backend.ensure_device_id().map_err(cloud_error_to_string)?;
     let payload = UploadRequest {
         game_id,
         version_id,
         size_bytes: metadata.size_bytes,
         sha256: metadata.sha256,
         file_list: metadata.file_list,
+        device_id: Some(device_id),
     };
 
     backend
@@ -216,6 +220,7 @@ pub async fn register_cloud_device(
     app: AppHandle,
     device_id: String,
     platform: String,
+    device_name: String,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
     settings: State<'_, Arc<SettingsManager>>,
 ) -> Result<(), String> {
@@ -225,7 +230,7 @@ pub async fn register_cloud_device(
     let backend = cloud.lock().await;
 
     match backend
-        .register_device(token.clone(), device_id.clone(), platform)
+        .register_device(token.clone(), device_id.clone(), platform, device_name)
         .await
     {
         Ok(_) => {
