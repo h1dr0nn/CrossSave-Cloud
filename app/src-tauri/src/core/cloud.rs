@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use reqwest::{multipart, Client};
+use reqwest::{header::CONTENT_TYPE, Client};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -58,9 +58,25 @@ pub struct CloudVersionSummary {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CloudDevice {
-  pub device_id: String,
-  pub platform: String,
-  pub last_seen: u64,
+    pub device_id: String,
+    pub platform: String,
+    pub last_seen: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UploadRequest {
+    pub game_id: String,
+    pub version_id: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+    pub file_list: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UploadUrlResponse {
+    pub upload_url: String,
+    pub r2_key: String,
+    pub version_id: String,
 }
 
 // =============================================================================
@@ -102,6 +118,11 @@ pub trait CloudBackend: Send + Sync {
         metadata: SaveMetadata,
         archive_path: PathBuf,
     ) -> Result<CloudVersionSummary, CloudError>;
+    async fn request_upload_url(
+        &self,
+        payload: UploadRequest,
+    ) -> Result<UploadUrlResponse, CloudError>;
+    async fn notify_upload_complete(&self, payload: UploadRequest) -> Result<(), CloudError>;
     async fn list_versions(
         &self,
         game_id: String,
@@ -143,6 +164,17 @@ impl CloudBackend for DisabledCloudBackend {
         _metadata: SaveMetadata,
         _archive_path: PathBuf,
     ) -> Result<CloudVersionSummary, CloudError> {
+        Err(CloudError::Disabled)
+    }
+
+    async fn request_upload_url(
+        &self,
+        _payload: UploadRequest,
+    ) -> Result<UploadUrlResponse, CloudError> {
+        Err(CloudError::Disabled)
+    }
+
+    async fn notify_upload_complete(&self, _payload: UploadRequest) -> Result<(), CloudError> {
         Err(CloudError::Disabled)
     }
 
@@ -385,47 +417,32 @@ impl CloudBackend for HttpCloudBackend {
             )));
         }
 
-        let device_id = self
-            .ensure_device_registered()
-            .await
-            .map_err(|err| {
-                warn!("{} failed to register device: {}", self.log_tag, err);
-                err
-            })?;
-        let base_url = self.validate_base_url()?;
-        let auth = self.get_auth_header()?;
+        let device_id = self.ensure_device_registered().await.map_err(|err| {
+            warn!("{} failed to register device: {}", self.log_tag, err);
+            err
+        })?;
 
         let archive_size = fs::metadata(&archive_path)
             .map_err(|e| CloudError::Io(e.to_string()))?
             .len();
         let hash = calculate_sha256(&archive_path)?;
 
-        let mut full_metadata = metadata.clone();
-        full_metadata.hash = hash.clone();
+        let upload_request = UploadRequest {
+            game_id: metadata.game_id.clone(),
+            version_id: metadata.version_id.clone(),
+            size_bytes: archive_size,
+            sha256: hash.clone(),
+            file_list: metadata.file_list.clone(),
+        };
 
-        let manifest = serde_json::json!({
-            "game_id": metadata.game_id,
-            "emulator_id": metadata.emulator_id,
-            "version_id": metadata.version_id,
-            "timestamp": metadata.timestamp,
-            "device_id": device_id,
-            "file_list": metadata.file_list,
-            "hash": hash,
-            "total_size_bytes": archive_size,
-        });
+        let signed = self.request_upload_url(upload_request.clone()).await?;
 
         let archive_file = fs::read(&archive_path).map_err(|e| CloudError::Io(e.to_string()))?;
-        let part = multipart::Part::bytes(archive_file)
-            .file_name(format!("{}.zip", full_metadata.version_id));
-        let form = multipart::Form::new()
-            .text("metadata", manifest.to_string())
-            .part("archive", part);
-
         let resp = self
             .client
-            .post(format!("{}/save/upload", base_url))
-            .header("Authorization", auth)
-            .multipart(form)
+            .put(&signed.upload_url)
+            .header(CONTENT_TYPE, "application/zip")
+            .body(archive_file)
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -442,12 +459,81 @@ impl CloudBackend for HttpCloudBackend {
             )));
         }
 
-        let parsed: CloudVersionSummary = resp
+        self.notify_upload_complete(upload_request.clone()).await?;
+
+        Ok(CloudVersionSummary {
+            game_id: upload_request.game_id,
+            emulator_id: metadata.emulator_id,
+            version_id: upload_request.version_id,
+            timestamp: metadata.timestamp,
+            size_bytes: upload_request.size_bytes,
+            hash,
+            device_id,
+            file_list: upload_request.file_list,
+            total_size_bytes: archive_size,
+        })
+    }
+
+    async fn request_upload_url(
+        &self,
+        payload: UploadRequest,
+    ) -> Result<UploadUrlResponse, CloudError> {
+        let base_url = self.validate_base_url()?;
+        let auth = self.get_auth_header()?;
+
+        let resp = self
+            .client
+            .post(format!("{}/save/upload-url", base_url))
+            .header("Authorization", auth)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
+
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(CloudError::Unauthorized("invalid token".into()));
+        }
+
+        if !resp.status().is_success() {
+            return Err(CloudError::NetworkError(format!(
+                "upload url failed: {}",
+                resp.status()
+            )));
+        }
+
+        let parsed: UploadUrlResponse = resp
             .json()
             .await
             .map_err(|e| CloudError::Serialization(e.to_string()))?;
 
         Ok(parsed)
+    }
+
+    async fn notify_upload_complete(&self, payload: UploadRequest) -> Result<(), CloudError> {
+        let base_url = self.validate_base_url()?;
+        let auth = self.get_auth_header()?;
+
+        let resp = self
+            .client
+            .post(format!("{}/save/notify-upload", base_url))
+            .header("Authorization", auth)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
+
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(CloudError::Unauthorized("invalid token".into()));
+        }
+
+        if !resp.status().is_success() {
+            return Err(CloudError::NetworkError(format!(
+                "notify upload failed: {}",
+                resp.status()
+            )));
+        }
+
+        Ok(())
     }
 
     async fn list_versions(
@@ -599,7 +685,9 @@ impl CloudBackend for HttpCloudBackend {
             .client
             .post(format!("{}/device/register", base_url))
             .header("Authorization", format!("Bearer {}", token))
-            .json(&serde_json::json!({"device_id": device_id.clone(), "platform": platform.clone()}))
+            .json(
+                &serde_json::json!({"device_id": device_id.clone(), "platform": platform.clone()}),
+            )
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
