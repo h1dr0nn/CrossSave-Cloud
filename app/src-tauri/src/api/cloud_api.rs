@@ -4,10 +4,13 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::core::cloud::{log_tag, CloudBackend, CloudDevice, CloudError, CloudVersionSummary};
+use crate::core::cloud::{
+    log_tag, CloudBackend, CloudDevice, CloudError, CloudVersionSummary, UploadRequest,
+    UploadUrlResponse,
+};
 use crate::core::history::HistoryManager;
 use crate::core::settings::{CloudMode, CloudSettings, SelfHostSettings, SettingsManager};
 use crate::core::sync::SyncManager;
@@ -48,6 +51,13 @@ struct DownloadCompletePayload {
 struct DownloadErrorPayload {
     version_id: String,
     message: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UploadMetadataPayload {
+    pub size_bytes: u64,
+    pub sha256: String,
+    pub file_list: Vec<String>,
 }
 
 #[tauri::command]
@@ -123,6 +133,56 @@ pub async fn upload_cloud_save(
     let backend = cloud.lock().await;
     backend
         .upload_archive(metadata, archive_path_buf)
+        .await
+        .map_err(cloud_error_to_string)
+}
+
+#[tauri::command]
+pub async fn get_upload_url(
+    game_id: String,
+    version_id: String,
+    metadata: UploadMetadataPayload,
+    cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    settings: State<'_, Arc<SettingsManager>>,
+) -> Result<UploadUrlResponse, String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
+    let backend = cloud.lock().await;
+    let payload = UploadRequest {
+        game_id,
+        version_id,
+        size_bytes: metadata.size_bytes,
+        sha256: metadata.sha256,
+        file_list: metadata.file_list,
+    };
+
+    backend
+        .request_upload_url(payload)
+        .await
+        .map_err(cloud_error_to_string)
+}
+
+#[tauri::command]
+pub async fn notify_upload(
+    game_id: String,
+    version_id: String,
+    metadata: UploadMetadataPayload,
+    cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    settings: State<'_, Arc<SettingsManager>>,
+) -> Result<(), String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
+
+    let backend = cloud.lock().await;
+    let payload = UploadRequest {
+        game_id,
+        version_id,
+        size_bytes: metadata.size_bytes,
+        sha256: metadata.sha256,
+        file_list: metadata.file_list,
+    };
+
+    backend
+        .notify_upload_complete(payload)
         .await
         .map_err(cloud_error_to_string)
 }

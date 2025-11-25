@@ -1,19 +1,34 @@
 import { errorResponse, jsonResponse } from "./utils";
-import { ensureUserScaffold } from "./storage";
+import { ensureUserScaffold, getSaveObjectKey } from "./storage";
 import { hashPassword, verifyPassword } from "./security";
 import {
   getUserByEmail,
   loadUserDevices,
   saveUserDevices,
-  saveUserMetadata,
+  saveUserMetadata as saveAccountMetadata,
   updateLastSeen
 } from "./userStore";
 import { signJwt } from "./jwt";
 import { AuthContext, parseAuth } from "./auth";
+import {
+  generatePresignedPut,
+  loadUserMetadata,
+  saveUserMetadata,
+  UserSaveMetadata,
+  versionIdValid
+} from "./saveMetadata";
 
 interface Env {
   CROSSSAVE_R2: R2Bucket;
   JWT_SECRET?: string;
+}
+
+interface UploadPayload {
+  game_id: string;
+  version_id: string;
+  size_bytes: number;
+  sha256: string;
+  file_list: string[];
 }
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
@@ -33,6 +48,34 @@ async function parseJsonBody(request: Request): Promise<Record<string, unknown> 
     console.error("[worker] invalid JSON body", error);
     return null;
   }
+}
+
+function parseUploadPayload(body: Record<string, unknown>): UploadPayload | null {
+  const gameId = typeof body.game_id === "string" ? body.game_id.trim() : "";
+  const versionId = typeof body.version_id === "string" ? body.version_id.trim() : "";
+  const sizeBytes = Number(body.size_bytes);
+  const sha256 = typeof body.sha256 === "string" ? body.sha256.trim() : "";
+  const fileList = Array.isArray(body.file_list)
+    ? body.file_list.map((f) => String(f)).filter((f) => f.trim().length > 0)
+    : [];
+
+  fileList.sort();
+
+  if (!gameId || !versionIdValid(versionId) || !sha256) {
+    return null;
+  }
+
+  if (!Number.isFinite(sizeBytes) || sizeBytes < 0) {
+    return null;
+  }
+
+  return {
+    game_id: gameId,
+    version_id: versionId,
+    size_bytes: sizeBytes,
+    sha256,
+    file_list: fileList,
+  };
 }
 
 async function handleSignup(request: Request, env: Env): Promise<Response> {
@@ -62,7 +105,7 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
   const passwordHash = await hashPassword(password);
   const now = Math.floor(Date.now() / 1000);
 
-  await saveUserMetadata(env, {
+  await saveAccountMetadata(env, {
     user_id: userId,
     email,
     password_hash: passwordHash,
@@ -144,6 +187,95 @@ async function requireAuth(env: Env, request: Request): Promise<AuthContext | nu
   const now = Math.floor(Date.now() / 1000);
   await updateLastSeen(env, auth.user_id, auth.device_id, now);
   return auth;
+}
+
+async function handleUploadUrl(
+  request: Request,
+  env: Env,
+  auth: AuthContext
+): Promise<Response> {
+  const body = await parseJsonBody(request);
+  if (!body) {
+    return errorResponse(400, "invalid_json");
+  }
+
+  const payload = parseUploadPayload(body);
+  if (!payload) {
+    return errorResponse(400, "invalid_payload");
+  }
+
+  try {
+    const signed = await generatePresignedPut(
+      env.CROSSSAVE_R2,
+      auth.user_id,
+      payload.game_id,
+      payload.version_id,
+      60 * 15
+    );
+
+    return jsonResponse({
+      ok: true,
+      upload_url: signed.url,
+      r2_key: signed.key,
+      version_id: payload.version_id,
+    });
+  } catch (error) {
+    console.error("[worker] failed to generate presigned url", error);
+    return errorResponse(500, "presign_failed");
+  }
+}
+
+async function handleNotifyUpload(
+  request: Request,
+  env: Env,
+  auth: AuthContext
+): Promise<Response> {
+  const body = await parseJsonBody(request);
+  if (!body) {
+    return errorResponse(400, "invalid_json");
+  }
+
+  const payload = parseUploadPayload(body);
+  if (!payload) {
+    return errorResponse(400, "invalid_payload");
+  }
+
+  const objectKey = getSaveObjectKey(auth.user_id, payload.game_id, payload.version_id);
+  const head = await env.CROSSSAVE_R2.head(objectKey);
+  if (!head) {
+    return errorResponse(404, "upload_missing");
+  }
+
+  let metadata: UserSaveMetadata;
+  try {
+    metadata = await loadUserMetadata(env.CROSSSAVE_R2, auth.user_id);
+  } catch (error) {
+    console.error("[worker] failed to load metadata", error);
+    return errorResponse(500, "metadata_load_failed");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const entry = {
+    version_id: payload.version_id,
+    game_id: payload.game_id,
+    size_bytes: payload.size_bytes,
+    sha256: payload.sha256,
+    file_list: payload.file_list,
+    device_id: auth.device_id,
+    timestamp: now,
+  };
+
+  const filtered = metadata.versions.filter((v) => v.version_id !== payload.version_id);
+  metadata.versions = [entry, ...filtered];
+
+  try {
+    await saveUserMetadata(env.CROSSSAVE_R2, auth.user_id, metadata);
+  } catch (error) {
+    console.error("[worker] failed to save metadata", error);
+    return errorResponse(500, "metadata_save_failed");
+  }
+
+  return jsonResponse({ ok: true });
 }
 
 async function handleRegisterDevice(request: Request, env: Env, auth: AuthContext): Promise<Response> {
@@ -232,6 +364,22 @@ export default {
         return errorResponse(401, "unauthorized");
       }
       return handleRegisterDevice(request, env, auth);
+    }
+
+    if (path === "/save/upload-url" && request.method === "POST") {
+      const auth = await requireAuth(env, request);
+      if (!auth) {
+        return errorResponse(401, "unauthorized");
+      }
+      return handleUploadUrl(request, env, auth);
+    }
+
+    if (path === "/save/notify-upload" && request.method === "POST") {
+      const auth = await requireAuth(env, request);
+      if (!auth) {
+        return errorResponse(401, "unauthorized");
+      }
+      return handleNotifyUpload(request, env, auth);
     }
 
     if (path === "/device/list" && request.method === "GET") {

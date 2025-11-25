@@ -2,10 +2,10 @@ mod api;
 mod core;
 
 use api::cloud_api::{
-    download_cloud_version, get_cloud_config, get_cloud_status, list_cloud_versions, list_cloud_devices,
-    login_cloud, logout_cloud, reconnect_cloud, register_cloud_device, remove_cloud_device, update_cloud_config,
-    update_cloud_mode, upload_cloud_save, validate_official_cloud_settings,
-    validate_self_host_settings,
+    download_cloud_version, get_cloud_config, get_cloud_status, get_upload_url, list_cloud_devices,
+    list_cloud_versions, login_cloud, logout_cloud, notify_upload, reconnect_cloud,
+    register_cloud_device, remove_cloud_device, update_cloud_config, update_cloud_mode,
+    upload_cloud_save, validate_official_cloud_settings, validate_self_host_settings,
 };
 use api::explorer_api::{check_path_status, open_folder, scan_save_files};
 use api::history_api::{delete_history_item, get_history_item, list_history, rollback_version};
@@ -16,7 +16,9 @@ use api::settings_api::{
 };
 use api::sync_api::{clear_sync_queue, force_sync_now, get_sync_status};
 use api::watcher_api::{start_watcher, stop_watcher};
-use core::cloud::{default_device_id, log_tag, CloudBackend, CloudError, DisabledCloudBackend, HttpCloudBackend};
+use core::cloud::{
+    default_device_id, log_tag, CloudBackend, CloudError, DisabledCloudBackend, HttpCloudBackend,
+};
 use core::history::HistoryManager;
 use core::profile::ProfileManager;
 use core::settings::{AppSettings, CloudMode, SettingsManager};
@@ -130,7 +132,10 @@ pub fn run() {
                 tracing::error!("[CLOUD] Failed to initialize cloud backend: {err}");
             }
 
-            tracing::info!("{} Cloud backend initialized", log_tag(&current_settings.cloud_mode));
+            tracing::info!(
+                "{} Cloud backend initialized",
+                log_tag(&current_settings.cloud_mode)
+            );
 
             // Register state
             let history_arc = Arc::new(history_manager);
@@ -192,6 +197,8 @@ pub fn run() {
             remove_cloud_device,
             reconnect_cloud,
             update_cloud_mode,
+            get_upload_url,
+            notify_upload,
             get_sync_status,
             force_sync_now,
             clear_sync_queue,
@@ -244,8 +251,6 @@ pub(crate) async fn switch_cloud_backend(
     );
     Ok(())
 }
-
-
 
 fn default_profile_dirs_for_app(app: &tauri::App) -> (PathBuf, PathBuf) {
     let app_data_dir = app

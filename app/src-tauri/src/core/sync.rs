@@ -8,7 +8,7 @@ use std::sync::{
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use reqwest::Client;
+use reqwest::{header::CONTENT_TYPE, Client};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
@@ -16,7 +16,9 @@ use tokio::sync::{Mutex, Notify};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
-use crate::core::cloud::{log_tag, CloudBackend, CloudVersionSummary};
+use crate::core::cloud::{
+    log_tag, CloudBackend, CloudVersionSummary, UploadRequest, UploadUrlResponse,
+};
 use crate::core::history::{HistoryEntry, HistoryManager};
 use crate::core::packager::SaveMetadata;
 use crate::core::settings::SettingsManager;
@@ -100,6 +102,23 @@ struct DownloadCompletePayload {
 
 #[derive(Clone, Debug, Serialize)]
 struct DownloadErrorPayload {
+    version_id: String,
+    message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct UploadProgressPayload {
+    version_id: String,
+    progress: u8,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct UploadCompletePayload {
+    version_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct UploadErrorPayload {
     version_id: String,
     message: String,
 }
@@ -332,16 +351,104 @@ impl UploadQueue {
         job: &UploadJob,
         cloud: &Arc<Mutex<Box<dyn CloudBackend + Send>>>,
     ) -> Result<(), String> {
-        let backend = cloud.lock().await;
-        let mut metadata = job.metadata.clone();
-        let hash = calculate_sha256(&job.archive_path).map_err(|e| e.to_string())?;
-        metadata.hash = hash;
+        let emit_error = |message: String, app_handle: &AppHandle, version_id: &String| {
+            let _ = app_handle.emit(
+                "sync://upload-error",
+                UploadErrorPayload {
+                    version_id: version_id.clone(),
+                    message: message.clone(),
+                },
+            );
+            message
+        };
 
-        backend
-            .upload_archive(metadata, job.archive_path.clone())
+        let hash = calculate_sha256(&job.archive_path)
+            .map_err(|e| emit_error(e.to_string(), &self.app_handle, &job.version_id))?;
+        let size_bytes = fs::metadata(&job.archive_path)
+            .map_err(|e| emit_error(e.to_string(), &self.app_handle, &job.version_id))?
+            .len();
+
+        let payload = UploadRequest {
+            game_id: job.game_id.clone(),
+            version_id: job.version_id.clone(),
+            size_bytes,
+            sha256: hash.clone(),
+            file_list: job.metadata.file_list.clone(),
+        };
+
+        let start_progress = UploadProgressPayload {
+            version_id: job.version_id.clone(),
+            progress: 0,
+        };
+        let _ = self
+            .app_handle
+            .emit("sync://upload-progress", start_progress.clone());
+
+        let signed: UploadUrlResponse = {
+            let backend = cloud.lock().await;
+            match backend.request_upload_url(payload.clone()).await {
+                Ok(url) => url,
+                Err(err) => {
+                    return Err(emit_error(
+                        err.to_string(),
+                        &self.app_handle,
+                        &payload.version_id,
+                    ));
+                }
+            }
+        };
+
+        let archive_bytes = fs::read(&job.archive_path)
+            .map_err(|e| emit_error(e.to_string(), &self.app_handle, &job.version_id))?;
+        let client = Client::new();
+        let put_resp = client
+            .put(&signed.upload_url)
+            .header(CONTENT_TYPE, "application/zip")
+            .body(archive_bytes)
+            .send()
             .await
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+
+        if !put_resp.status().is_success() {
+            let message = format!("upload failed: {}", put_resp.status());
+            return Err(emit_error(message, &self.app_handle, &payload.version_id));
+        }
+
+        let mid_progress = UploadProgressPayload {
+            version_id: job.version_id.clone(),
+            progress: 80,
+        };
+        let _ = self
+            .app_handle
+            .emit("sync://upload-progress", mid_progress.clone());
+
+        {
+            let backend = cloud.lock().await;
+            if let Err(err) = backend.notify_upload_complete(payload.clone()).await {
+                return Err(emit_error(
+                    err.to_string(),
+                    &self.app_handle,
+                    &payload.version_id,
+                ));
+            }
+        }
+
+        let _ = self.app_handle.emit(
+            "sync://upload-progress",
+            UploadProgressPayload {
+                version_id: job.version_id.clone(),
+                progress: 100,
+            },
+        );
+
+        let _ = self.app_handle.emit(
+            "sync://upload-complete",
+            UploadCompletePayload {
+                version_id: payload.version_id,
+            },
+        );
+
+        Ok(())
     }
 }
 
@@ -454,7 +561,7 @@ impl SyncManager {
                     .get_settings()
                     .map(|s| (s.cloud.enabled, s.cloud_mode))
                     .unwrap_or((false, crate::core::settings::CloudMode::Off));
-                
+
                 let tag = log_tag(&mode);
 
                 if !enabled {
@@ -526,7 +633,10 @@ impl SyncManager {
                             }
                         }
                         SyncDecision::Download(version_id) => {
-                            info!("{} [SYNC] Should download {} version {}", tag, game_id, version_id);
+                            info!(
+                                "{} [SYNC] Should download {} version {}",
+                                tag, game_id, version_id
+                            );
                             if let Err(err) = perform_download(
                                 cloud_clone.clone(),
                                 history_clone.clone(),
