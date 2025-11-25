@@ -387,7 +387,7 @@ impl HttpCloudBackend {
             .map_err(|e| CloudError::InvalidConfig(format!("client build failed: {e}")))?;
 
         let log_tag = log_tag(&mode);
-        let access_headers = Self::collect_access_headers(mode);
+        let access_headers = Self::collect_access_headers(mode.clone());
 
         Ok(Self {
             client,

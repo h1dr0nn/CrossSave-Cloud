@@ -194,7 +194,7 @@ impl SavePackager {
             timestamp,
             version_id,
             file_list,
-            hash: archive_hash,
+            hash: archive_hash.clone(),
             size_bytes: Some(archive_size),
             sha256: Some(archive_hash.clone()),
             source: Some("local".to_string()),

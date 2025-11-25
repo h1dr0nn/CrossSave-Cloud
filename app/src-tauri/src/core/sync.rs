@@ -8,7 +8,6 @@ use std::sync::{
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use futures::StreamExt;
 use reqwest::{header::CONTENT_LENGTH, header::CONTENT_TYPE, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -1020,7 +1019,7 @@ pub async fn perform_download(
     );
 
     let client = Client::new();
-    let mut response = client
+    let response = client
         .get(&download_info.download_url)
         .send()
         .await
@@ -1038,23 +1037,25 @@ pub async fn perform_download(
         .await
         .map_err(|e| emit_error("write-file", e.to_string(), &app_handle))?;
 
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| emit_error("http-get", e.to_string(), &app_handle))?;
-        received_bytes += chunk.len() as u64;
-        file.write_all(&chunk)
-            .await
-            .map_err(|e| emit_error("write-file", e.to_string(), &app_handle))?;
+    // Download the entire file
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| emit_error("http-get", e.to_string(), &app_handle))?;
+    
+    received_bytes = bytes.len() as u64;
+    file.write_all(&bytes)
+        .await
+        .map_err(|e| emit_error("write-file", e.to_string(), &app_handle))?;
 
-        let _ = app_handle.emit(
-            "sync://download-progress",
-            DownloadProgressPayload {
-                version_id: version_id.clone(),
-                received_bytes,
-                total_bytes,
-            },
-        );
-    }
+    let _ = app_handle.emit(
+        "sync://download-progress",
+        DownloadProgressPayload {
+            version_id: version_id.clone(),
+            received_bytes,
+            total_bytes,
+        },
+    );
 
     file.flush()
         .await
