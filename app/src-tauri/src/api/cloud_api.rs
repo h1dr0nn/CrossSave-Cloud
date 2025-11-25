@@ -812,14 +812,53 @@ fn ensure_api_key(settings: &State<'_, Arc<SettingsManager>>) -> Result<String, 
 fn cloud_error_to_string(error: CloudError) -> String {
     match error {
         CloudError::NotEnabled => "Cloud sync is not enabled".to_string(),
-        CloudError::Disabled => "Cloud backend is disabled".to_string(),
-        CloudError::NetworkError(msg) => format!("Network error: {}", msg),
-        CloudError::StorageError(msg) => format!("Storage error: {}", msg),
-        CloudError::NotFound(msg) => format!("Not found: {}", msg),
-        CloudError::InvalidConfig(msg) => format!("Invalid configuration: {}", msg),
-        CloudError::Io(msg) => format!("IO error: {}", msg),
-        CloudError::Serialization(msg) => format!("Serialization error: {}", msg),
-        CloudError::Unauthorized(msg) => format!("Unauthorized: {}", msg),
+        CloudError::Disabled => "Cloud sync is disabled".to_string(),
+        CloudError::NetworkError(msg) => {
+            // Parse common network error patterns and provide user-friendly messages
+            if msg.contains("error sending request") || msg.contains("connection") {
+                "Unable to connect to cloud server. Please check your internet connection".to_string()
+            } else if msg.contains("timeout") || msg.contains("timed out") {
+                "Connection timed out. Please try again".to_string()
+            } else if msg.contains("dns") || msg.contains("resolve") {
+                "Cannot reach cloud server. Please check your internet connection".to_string()
+            } else {
+                "Network error. Please check your connection and try again".to_string()
+            }
+        }
+        CloudError::StorageError(msg) => {
+            if msg.contains("space") || msg.contains("full") {
+                "Not enough storage space".to_string()
+            } else {
+                "Storage error. Please try again".to_string()
+            }
+        }
+        CloudError::NotFound(msg) => {
+            if msg.contains("version") {
+                "Save version not found".to_string()
+            } else if msg.contains("game") {
+                "Game not found".to_string()
+            } else {
+                "Item not found".to_string()
+            }
+        }
+        CloudError::InvalidConfig(msg) => {
+            if msg.contains("api_key") || msg.contains("token") {
+                "Please log in to continue".to_string()
+            } else if msg.contains("base_url") {
+                "Cloud server URL is not configured".to_string()
+            } else {
+                "Configuration error. Please check your settings".to_string()
+            }
+        }
+        CloudError::Io(msg) => {
+            if msg.contains("permission") || msg.contains("denied") {
+                "Permission denied. Please check file permissions".to_string()
+            } else {
+                "File operation failed. Please try again".to_string()
+            }
+        }
+        CloudError::Serialization(_) => "Data format error. Please try again".to_string(),
+        CloudError::Unauthorized(msg) => msg, // Already user-friendly from cloud.rs
     }
 }
 

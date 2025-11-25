@@ -522,15 +522,24 @@ impl CloudBackend for HttpCloudBackend {
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
         if !resp.status().is_success() {
+            let status = resp.status();
             warn!(
                 "{} Signup failed with status {}",
                 self.log_tag,
-                resp.status()
+                status
             );
-            return Err(CloudError::Unauthorized(format!(
-                "status {}",
-                resp.status(),
-            )));
+            
+            // Return user-friendly error messages based on status code
+            let error_message = match status.as_u16() {
+                409 => "This email address is already registered".to_string(),
+                400 => "Invalid email or password format".to_string(),
+                401 => "Authentication failed".to_string(),
+                403 => "Access denied".to_string(),
+                500..=599 => "Server error. Please try again later".to_string(),
+                _ => format!("Signup failed. Please try again"),
+            };
+            
+            return Err(CloudError::Unauthorized(error_message));
         }
 
         let parsed: SignupResponse = resp
@@ -580,15 +589,24 @@ impl CloudBackend for HttpCloudBackend {
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
         if !resp.status().is_success() {
+            let status = resp.status();
             warn!(
                 "{} Login failed with status {}",
                 self.log_tag,
-                resp.status()
+                status
             );
-            return Err(CloudError::Unauthorized(format!(
-                "status {}",
-                resp.status(),
-            )));
+            
+            // Return user-friendly error messages based on status code
+            let error_message = match status.as_u16() {
+                401 => "Invalid email or password".to_string(),
+                404 => "Account not found".to_string(),
+                403 => "Access denied".to_string(),
+                429 => "Too many login attempts. Please try again later".to_string(),
+                500..=599 => "Server error. Please try again later".to_string(),
+                _ => "Login failed. Please try again".to_string(),
+            };
+            
+            return Err(CloudError::Unauthorized(error_message));
         }
 
         let parsed: LoginResponse = resp
