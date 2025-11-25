@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::core::cloud::{
-    log_tag, CloudBackend, CloudDevice, CloudError, CloudVersionSummary, UploadRequest,
-    UploadUrlResponse,
+    ensure_device_identity, log_tag, CloudBackend, CloudDevice, CloudError, CloudVersionSummary,
+    UploadRequest, UploadUrlResponse,
 };
 use crate::core::history::HistoryManager;
 use crate::core::settings::{CloudMode, CloudSettings, SelfHostSettings, SettingsManager};
@@ -27,6 +27,19 @@ pub struct CloudStatus {
 pub struct LoginResult {
     pub token: String,
     pub device_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct SignupErrorPayload {
+    error: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct SignupSuccessPayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -60,8 +73,48 @@ pub struct UploadMetadataPayload {
     pub file_list: Vec<String>,
 }
 
+async fn register_device_with_retry(
+    app: &AppHandle,
+    cloud: &State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    settings: &State<'_, Arc<SettingsManager>>,
+    token: String,
+) -> Result<String, String> {
+    let (device_id, platform, device_name) =
+        ensure_device_identity(settings.inner()).map_err(cloud_error_to_string)?;
+
+    let mut last_error: Option<String> = None;
+    for _ in 0..2 {
+        let result = {
+            let backend = cloud.lock().await;
+            backend
+                .register_device(
+                    token.clone(),
+                    device_id.clone(),
+                    platform.clone(),
+                    device_name.clone(),
+                )
+                .await
+        };
+
+        match result {
+            Ok(_) => {
+                let _ = app.emit("cloud://device-registered", device_id.clone());
+                return Ok(device_id);
+            }
+            Err(err) => {
+                last_error = Some(cloud_error_to_string(err));
+            }
+        }
+    }
+
+    let message = last_error.unwrap_or_else(|| "device registration failed".to_string());
+    let _ = app.emit("cloud://device-error", message.clone());
+    Err(message)
+}
+
 #[tauri::command]
 pub async fn login_cloud(
+    app: AppHandle,
     email: String,
     password: String,
     cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
@@ -69,25 +122,106 @@ pub async fn login_cloud(
 ) -> Result<LoginResult, String> {
     ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
 
-    let backend = cloud.lock().await;
-    let token = backend
-        .login(email, password)
-        .await
-        .map_err(cloud_error_to_string)?;
+    let (token, device_id) = {
+        let backend = cloud.lock().await;
+        let token = backend
+            .login(email, password)
+            .await
+            .map_err(cloud_error_to_string)?;
+        let device_id = backend.get_device_id().map_err(cloud_error_to_string)?;
+        (token, device_id)
+    };
 
-    let device_id = backend.get_device_id().map_err(cloud_error_to_string)?;
+    register_device_with_retry(&app, &cloud, &settings, token.clone()).await?;
+
+    let user_id = settings
+        .get_settings()
+        .map(|s| {
+            if s.cloud.user_id.is_empty() {
+                None
+            } else {
+                Some(s.cloud.user_id)
+            }
+        })
+        .map_err(|e| format!("Failed to load settings: {e}"))?;
+
+    Ok(LoginResult {
+        token,
+        device_id,
+        user_id,
+    })
+}
+
+#[tauri::command]
+pub async fn signup_cloud(
+    app: AppHandle,
+    email: String,
+    password: String,
+    device_id: String,
+    platform: String,
+    device_name: String,
+    cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    settings: State<'_, Arc<SettingsManager>>,
+) -> Result<LoginResult, String> {
+    ensure_cloud_mode_enabled(&settings).map_err(cloud_error_to_string)?;
 
     let mut app_settings = settings
         .get_settings()
         .map_err(|e| format!("Failed to load settings: {e}"))?;
-    app_settings.cloud.enabled = true;
-    app_settings.cloud.api_key = token.clone();
-    app_settings.cloud.device_id = device_id.clone();
+    if !device_id.trim().is_empty() {
+        app_settings.cloud.device_id = device_id.clone();
+    }
+    if !platform.trim().is_empty() {
+        app_settings.cloud.platform = platform.clone();
+    }
+    if !device_name.trim().is_empty() {
+        app_settings.cloud.device_name = device_name.clone();
+    }
     settings
         .update_settings(app_settings)
         .map_err(|e| format!("Failed to persist settings: {e}"))?;
 
-    Ok(LoginResult { token, device_id })
+    let token = {
+        let backend = cloud.lock().await;
+        match backend.signup(email, password).await {
+            Ok(token) => token,
+            Err(err) => {
+                let message = cloud_error_to_string(err);
+                let payload = SignupErrorPayload {
+                    error: message.clone(),
+                };
+                let _ = app.emit("cloud://signup-error", payload);
+                return Err(message);
+            }
+        }
+    };
+
+    register_device_with_retry(&app, &cloud, &settings, token.clone())
+        .await
+        .map_err(|err| {
+            let payload = SignupErrorPayload { error: err.clone() };
+            let _ = app.emit("cloud://signup-error", payload);
+            err
+        })?;
+
+    let settings_snapshot = settings
+        .get_settings()
+        .map_err(|e| format!("Failed to load settings: {e}"))?;
+    let user_id = if settings_snapshot.cloud.user_id.is_empty() {
+        None
+    } else {
+        Some(settings_snapshot.cloud.user_id.clone())
+    };
+    let success_payload = SignupSuccessPayload {
+        user_id: user_id.clone(),
+    };
+    let _ = app.emit("cloud://signup-success", success_payload);
+
+    Ok(LoginResult {
+        token,
+        device_id: settings_snapshot.cloud.device_id,
+        user_id,
+    })
 }
 
 #[tauri::command]
@@ -234,6 +368,7 @@ pub async fn register_cloud_device(
         .await
     {
         Ok(_) => {
+            let _ = app.emit("cloud://device-registered", device_id.clone());
             let devices = backend
                 .list_devices(token)
                 .await

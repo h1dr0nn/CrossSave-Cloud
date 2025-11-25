@@ -7,6 +7,7 @@ interface AuthState {
     email: string | null;
     token: string | null;
     deviceId: string | null;
+    userId: string | null;
 }
 
 export interface SyncStatus {
@@ -49,6 +50,7 @@ export interface CloudConfig {
     mode?: CloudMode;
     base_url?: string;
     api_key?: string;
+    user_id?: string;
     access_key?: string;
     auth_mode?: CloudAuthMode;
     enabled?: boolean;
@@ -69,6 +71,15 @@ export interface CloudValidationResult {
 interface LoginResult {
     token: string;
     device_id: string;
+    user_id?: string;
+}
+
+interface SignupSuccessPayload {
+    user_id?: string;
+}
+
+interface SignupErrorPayload {
+    error: string;
 }
 
 interface AppSettingsSnapshot {
@@ -98,7 +109,8 @@ const authState = writable<AuthState>({
     isLoggedIn: false,
     email: null,
     token: null,
-    deviceId: null
+    deviceId: null,
+    userId: null
 });
 
 const syncStatus = writable<SyncStatus>({
@@ -176,11 +188,25 @@ function bindEvents() {
         listen<string>('cloud://device-error', (event) => {
             console.error('Device error:', event.payload);
         }),
+        listen<SignupSuccessPayload>('cloud://signup-success', (event) => {
+            if (event.payload?.user_id) {
+                authState.update((state) => ({ ...state, userId: event.payload?.user_id ?? state.userId }));
+            }
+        }),
+        listen<SignupErrorPayload>('cloud://signup-error', (event) => {
+            console.error('Signup error:', event.payload?.error ?? event.payload);
+        }),
         listen<CloudValidationPayload>('cloud://config-valid', (event) => {
             validationResult.set({ status: 'valid', message: event.payload?.message ?? 'Configuration valid' });
         }),
         listen<CloudValidationPayload>('cloud://config-invalid', (event) => {
             validationResult.set({ status: 'invalid', message: event.payload?.message ?? 'Configuration invalid' });
+        }),
+        listen<string>('sync://device-missing', (event) => {
+            console.warn('Device missing from cloud:', event.payload);
+        }),
+        listen<string>('sync://device-error', (event) => {
+            console.error('Device error:', event.payload);
         }),
         listen<{ mode: CloudMode; config?: CloudConfig }>('cloud://mode-changed', (event) => {
             cloudMode.set(event.payload.mode);
@@ -214,6 +240,13 @@ function detectPlatform(): string {
     return navigator.userAgentData?.platform || navigator.platform || 'unknown';
 }
 
+function generateDeviceId(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 async function getDeviceContext(): Promise<{ deviceId: string; platform: string; deviceName: string }> {
     try {
         const appSettings = await invoke<AppSettingsSnapshot>('get_app_settings');
@@ -221,29 +254,11 @@ async function getDeviceContext(): Promise<{ deviceId: string; platform: string;
         return {
             deviceId: cloud.device_id ?? '',
             platform: cloud.platform ?? detectPlatform(),
-            deviceName: cloud.device_name ?? 'Unknown device'
+            deviceName: cloud.device_name ?? 'Unknown Device'
         };
     } catch (error) {
         console.error('Failed to load device context', error);
-        return { deviceId: '', platform: detectPlatform(), deviceName: 'Unknown device' };
-    }
-}
-
-async function ensureDeviceRegisteredAfterLogin(): Promise<void> {
-    const context = await getDeviceContext();
-    if (!context.deviceId) {
-        return;
-    }
-
-    try {
-        await invoke('register_cloud_device', {
-            device_id: context.deviceId,
-            platform: context.platform || 'unknown',
-            device_name: context.deviceName || 'Unknown device'
-        });
-    } catch (error) {
-        const message = typeof error === 'string' ? error : (error as Error)?.message ?? 'Device registration failed';
-        console.error('Device registration failed', message);
+        return { deviceId: '', platform: detectPlatform(), deviceName: 'Unknown Device' };
     }
 }
 
@@ -283,7 +298,8 @@ export const cloudStore = {
                     isLoggedIn: true,
                     email: loadPersistedEmail(),
                     token: config.api_key,
-                    deviceId: config.device_id ?? null
+                    deviceId: config.device_id ?? null,
+                    userId: config.user_id ?? null
                 });
             }
         } catch (error) {
@@ -300,14 +316,45 @@ export const cloudStore = {
                 isLoggedIn: true,
                 email,
                 token: result.token,
-                deviceId: result.device_id
+                deviceId: result.device_id,
+                userId: result.user_id ?? null
             });
-            await ensureDeviceRegisteredAfterLogin();
             await this.listDevices();
             return { success: true };
         } catch (error: unknown) {
             const message = typeof error === 'string' ? error : (error as Error)?.message ?? 'Login failed';
-            authState.set({ isLoggedIn: false, email: null, token: null, deviceId: null });
+            authState.set({ isLoggedIn: false, email: null, token: null, deviceId: null, userId: null });
+            return { success: false, error: message };
+        }
+    },
+
+    async signup(email: string, password: string): Promise<{ success: boolean; error?: string }> {
+        bindEvents();
+        try {
+            const context = await getDeviceContext();
+            const deviceId = context.deviceId || generateDeviceId();
+            const platform = context.platform || detectPlatform();
+            const deviceName = context.deviceName || 'Unknown Device';
+            const result = await invoke<LoginResult>('signup_cloud', {
+                email,
+                password,
+                device_id: deviceId,
+                platform,
+                device_name: deviceName
+            });
+            await persistEmail(email);
+            authState.set({
+                isLoggedIn: true,
+                email,
+                token: result.token,
+                deviceId: result.device_id,
+                userId: result.user_id ?? null
+            });
+            await this.listDevices();
+            return { success: true };
+        } catch (error: unknown) {
+            const message = typeof error === 'string' ? error : (error as Error)?.message ?? 'Signup failed';
+            authState.set({ isLoggedIn: false, email: null, token: null, deviceId: null, userId: null });
             return { success: false, error: message };
         }
     },
@@ -318,7 +365,7 @@ export const cloudStore = {
         } catch (error) {
             console.error('Failed to logout from cloud', error);
         }
-        authState.set({ isLoggedIn: false, email: null, token: null, deviceId: null });
+        authState.set({ isLoggedIn: false, email: null, token: null, deviceId: null, userId: null });
     },
 
     async listDevices(): Promise<CloudDevice[]> {

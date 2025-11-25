@@ -17,7 +17,8 @@ use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
 use crate::core::cloud::{
-    log_tag, CloudBackend, CloudVersionSummary, UploadRequest, UploadUrlResponse,
+    ensure_device_identity, log_tag, CloudBackend, CloudMode, CloudVersionSummary, UploadRequest,
+    UploadUrlResponse,
 };
 use crate::core::history::{HistoryEntry, HistoryManager};
 use crate::core::packager::SaveMetadata;
@@ -86,6 +87,78 @@ pub fn determine_sync_action(
             }
         }
     }
+}
+
+async fn ensure_registered_device_for_sync(
+    cloud: &Arc<Mutex<Box<dyn CloudBackend + Send>>>,
+    settings: &Arc<SettingsManager>,
+    app_handle: &AppHandle,
+) -> Result<String, String> {
+    let settings_snapshot = settings
+        .get_settings()
+        .map_err(|e| format!("Failed to load settings: {e}"))?;
+
+    if settings_snapshot.cloud_mode == CloudMode::Off {
+        return Err("Cloud sync is disabled".to_string());
+    }
+
+    let token = match settings_snapshot.cloud_mode {
+        CloudMode::SelfHost => settings_snapshot.self_host.access_key.clone(),
+        _ => settings_snapshot.cloud.api_key.clone(),
+    };
+
+    if token.trim().is_empty() {
+        return Err("Cloud sync is not configured.".to_string());
+    }
+
+    let (device_id, platform, device_name) =
+        ensure_device_identity(settings).map_err(|e| e.to_string())?;
+
+    {
+        let backend = cloud.lock().await;
+        let devices = backend
+            .list_devices(token.clone())
+            .await
+            .map_err(|e| e.to_string())?;
+        if devices.iter().any(|device| device.device_id == device_id) {
+            return Ok(device_id);
+        }
+    }
+
+    let _ = app_handle.emit("sync://device-missing", device_id.clone());
+
+    {
+        let backend = cloud.lock().await;
+        backend
+            .register_device(
+                token.clone(),
+                device_id.clone(),
+                platform.clone(),
+                device_name.clone(),
+            )
+            .await
+            .map_err(|e| {
+                let message = e.to_string();
+                let _ = app_handle.emit("sync://device-error", message.clone());
+                message
+            })?;
+    }
+
+    {
+        let backend = cloud.lock().await;
+        let devices = backend
+            .list_devices(token)
+            .await
+            .map_err(|e| e.to_string())?;
+        if devices.iter().any(|device| device.device_id == device_id) {
+            let _ = app_handle.emit("cloud://device-registered", device_id.clone());
+            return Ok(device_id);
+        }
+    }
+
+    let message = "Device registration verification failed".to_string();
+    let _ = app_handle.emit("sync://device-error", message.clone());
+    Err(message)
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -443,21 +516,20 @@ impl UploadQueue {
             })?
             .len();
 
-        let device_id = {
-            let backend = cloud.lock().await;
-            backend.ensure_device_id().map_err(|e| {
+        let device_id = ensure_registered_device_for_sync(cloud, settings, &self.app_handle)
+            .await
+            .map_err(|message| {
                 emit_error(
                     UploadErrorPayload {
                         version_id: job.version_id.clone(),
                         stage: "preflight".to_string(),
                         reason: "missing_config".to_string(),
-                        message: e.to_string(),
+                        message: message.clone(),
                         status: None,
                     },
                     &self.app_handle,
                 )
-            })?
-        };
+            })?;
 
         let payload = UploadRequest {
             game_id: job.game_id.clone(),
@@ -778,6 +850,7 @@ impl SyncManager {
                                 cloud_clone.clone(),
                                 history_clone.clone(),
                                 app_handle_clone.clone(),
+                                settings_clone.clone(),
                                 game_id.clone(),
                                 version_id,
                             )
@@ -868,6 +941,7 @@ async fn perform_download(
     cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>,
     history: Arc<HistoryManager>,
     app_handle: AppHandle,
+    settings: Arc<SettingsManager>,
     game_id: String,
     version_id: String,
 ) -> Result<(), String> {
@@ -886,6 +960,12 @@ async fn perform_download(
     let _ = app_handle.emit("sync://download-progress", start_progress);
 
     let result: Result<(), String> = async {
+        ensure_registered_device_for_sync(&cloud, &settings, &app_handle)
+            .await
+            .map_err(|e| {
+                let _ = app_handle.emit("sync://device-error", e.clone());
+                e
+            })?;
         let summary = {
             let backend = cloud.lock().await;
             let versions = backend

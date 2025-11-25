@@ -55,6 +55,8 @@ pub struct CloudSettings {
     pub device_name: String,
     #[serde(default)]
     pub platform: String,
+    #[serde(default)]
+    pub user_id: String,
     pub timeout_seconds: u64,
     #[serde(default)]
     pub has_registered_device: bool,
@@ -69,6 +71,7 @@ impl Default for CloudSettings {
             device_id: String::new(),
             device_name: String::new(),
             platform: String::new(),
+            user_id: String::new(),
             timeout_seconds: 30,
             has_registered_device: false,
         }
