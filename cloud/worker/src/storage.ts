@@ -41,10 +41,14 @@ export async function ensureUserScaffold(bucket: R2Bucket, userId: string): Prom
   ]);
 
   if (!metadataHead) {
+    const now = Math.floor(Date.now() / 1000);
     const metadata = {
       user_id: userId,
-      versions: [] as Array<unknown>
-      // TODO: Extend metadata schema when versioning requirements are finalized.
+      email: `${userId}@placeholder.local`,
+      password_hash: "",
+      created_at: now,
+      updated_at: now,
+      devices: 0
     };
     await writeJson(bucket, metadataKey, metadata);
   }
@@ -53,7 +57,6 @@ export async function ensureUserScaffold(bucket: R2Bucket, userId: string): Prom
     const devices = {
       user_id: userId,
       devices: [] as Array<unknown>
-      // TODO: Extend device schema for platform identifiers and trust flags.
     };
     await writeJson(bucket, devicesKey, devices);
   }
