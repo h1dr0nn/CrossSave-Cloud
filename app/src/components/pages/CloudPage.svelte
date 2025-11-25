@@ -15,6 +15,7 @@
     CloudVersion,
   } from "$lib/stores/cloudStore";
   import { pushError, pushInfo, pushSuccess } from "$lib/notifications";
+  import { formatErrorMessage } from "$lib/errorMessages";
 
   // Login state
   let email = "";
@@ -202,7 +203,7 @@
         await initializeAfterLogin();
         pushSuccess("Logged in successfully");
       } else {
-        loginError = result.error ?? "Invalid credentials";
+        loginError = formatErrorMessage(result.error ?? "Invalid credentials");
       }
     } finally {
       isLoggingIn = false;
@@ -240,7 +241,7 @@
         await initializeAfterLogin();
         pushSuccess("Account created successfully");
       } else {
-        loginError = result.error ?? "Signup failed";
+        loginError = formatErrorMessage(result.error ?? "Signup failed");
       }
     } finally {
       isLoggingIn = false;
@@ -270,8 +271,7 @@
       deviceId = status.device_id;
       onlineStatus = status.connected ? "online" : "offline";
     } catch (error) {
-      loginError =
-        typeof error === "string" ? error : "Failed to load cloud status";
+      loginError = formatErrorMessage(error);
       pushError(loginError);
     }
   }
@@ -321,7 +321,7 @@
       await cloudStore.removeDevice(device.device_id);
       pushSuccess("Device removed");
     } catch (error) {
-      pushError(`Failed to remove device: ${error}`);
+      pushError(formatErrorMessage(error));
     }
   }
 
@@ -344,7 +344,7 @@
       await cloudStore.downloadCloudVersion(selectedGame, versionId);
       pushInfo("Download started");
     } catch (error) {
-      pushError("Download failed: " + error);
+      pushError(formatErrorMessage(error));
     }
   }
 

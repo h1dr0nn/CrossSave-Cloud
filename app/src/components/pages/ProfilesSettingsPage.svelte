@@ -12,6 +12,7 @@
     type EmulatorProfile,
   } from "$lib/api";
   import { pushError, pushInfo, pushSuccess } from "$lib/notifications";
+  import { formatErrorMessage } from "$lib/errorMessages";
 
   function goBack() {
     goto("/settings", { keepFocus: true, noScroll: true });
@@ -33,7 +34,7 @@
     try {
       profiles = await listProfiles();
     } catch (error) {
-      pushError(`Failed to load profiles: ${error}`);
+      pushError(formatErrorMessage(error));
     }
   }
 
@@ -52,11 +53,11 @@
       await saveProfile(event.detail);
       await loadProfiles();
       pushSuccess(
-        `Profile ${event.detail.name} ${editingProfile ? "updated" : "created"}`,
+        `Profile ${event.detail.name} ${editingProfile ? "updated" : "created"}`
       );
       isModalOpen = false;
     } catch (error) {
-      pushError(`Failed to save profile: ${error}`);
+      pushError(formatErrorMessage(error));
     }
   }
 
@@ -73,7 +74,7 @@
       await loadProfiles();
       pushSuccess(`Profile ${profileToDelete.name} deleted`);
     } catch (error) {
-      pushError(`Failed to delete profile: ${error}`);
+      pushError(formatErrorMessage(error));
     } finally {
       profileToDelete = null;
       deleteDialogOpen = false;
@@ -118,7 +119,7 @@
           validPaths: [],
         },
       };
-      pushError(`Validation failed for ${profile.emulator_id}: ${error}`);
+      pushError(formatErrorMessage(error));
 
       // Auto-clear error validation after 5 seconds
       setTimeout(() => {

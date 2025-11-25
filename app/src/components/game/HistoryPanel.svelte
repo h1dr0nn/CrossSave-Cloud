@@ -9,6 +9,7 @@
   } from "../../lib/api";
   import { historyState, setHistory } from "../../lib/historyStore";
   import { pushError, pushInfo } from "../../lib/notifications";
+  import { formatErrorMessage } from "../../lib/errorMessages";
 
   let gameId = "";
   let versionId = "";
@@ -36,7 +37,7 @@
       message = "History loaded";
       pushInfo(`Loaded ${entries.length} history entries`);
     } catch (error) {
-      pushError(`History list failed: ${error}`);
+      pushError(formatErrorMessage(error));
     }
   };
 
@@ -47,7 +48,7 @@
       selected = await getHistoryItem(gameId.trim(), versionId.trim());
       pushInfo(`Fetched history entry ${versionId}`);
     } catch (error) {
-      pushError(`Get failed: ${error}`);
+      pushError(formatErrorMessage(error));
     }
   };
 
@@ -58,7 +59,7 @@
       message = "Rollback completed";
       pushInfo(`Rollback completed for ${versionId}`);
     } catch (error) {
-      pushError(`Rollback failed: ${error}`);
+      pushError(formatErrorMessage(error));
     }
   };
 
@@ -69,7 +70,7 @@
       message = "History entry deleted";
       pushInfo(`Deleted ${versionId} for ${gameId}`);
     } catch (error) {
-      pushError(`Delete failed: ${error}`);
+      pushError(formatErrorMessage(error));
     }
   };
 </script>

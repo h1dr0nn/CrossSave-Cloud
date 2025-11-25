@@ -4,6 +4,7 @@
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import AppHeader from "../layout/AppHeader.svelte";
   import { pushInfo, pushSuccess, pushError } from "$lib/notifications";
+  import { formatErrorMessage } from "$lib/errorMessages";
   import {
     cloudStore,
     type CloudAuthMode,
@@ -215,11 +216,7 @@
       if (activeMode !== "official") return;
 
       console.error("[CloudSettings] Connection failed:", error);
-      pushError(
-        typeof error === "string"
-          ? error
-          : ((error as Error)?.message ?? "Connection failed")
-      );
+      pushError(formatErrorMessage(error));
       officialConnectionFailed = true;
       onlineStatus = "offline";
     } finally {
@@ -398,11 +395,7 @@
     cloudStore
       .updateCloudSettings(updated)
       .catch((error) => {
-        pushError(
-          typeof error === "string"
-            ? error
-            : ((error as Error)?.message ?? "Failed to update settings")
-        );
+        pushError(formatErrorMessage(error));
       })
       .finally(() => {
         saving = false;
@@ -428,11 +421,7 @@
         onlineStatus = "online";
       } catch (error) {
         await minDelay;
-        pushError(
-          typeof error === "string"
-            ? error
-            : ((error as Error)?.message ?? "Validation failed")
-        );
+        pushError(formatErrorMessage(error));
         onlineStatus = "offline";
       } finally {
         validating = false;
