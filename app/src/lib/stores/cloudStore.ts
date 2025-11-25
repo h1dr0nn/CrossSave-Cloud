@@ -33,6 +33,12 @@ export interface CloudDevice {
     last_seen: number;
 }
 
+export interface ConnectionStatus {
+    connected: boolean;
+    last_success?: number; // timestamp in seconds
+    last_error?: string;
+}
+
 export type CloudMode = 'official' | 'self_host' | 'off';
 export type CloudAuthMode = 'NONE' | 'ACCESS_KEY' | 'USERPASS';
 
@@ -126,6 +132,11 @@ const downloadState = writable<DownloadState>({
     error: null
 });
 const onlineStatus = writable<'online' | 'offline' | 'connecting' | 'failed'>('offline');
+const connectionStatus = writable<ConnectionStatus>({
+    connected: false,
+    last_success: undefined,
+    last_error: undefined
+});
 const devices = writable<CloudDevice[]>([]);
 const cloudMode = writable<CloudMode>('off');
 const cloudConfig = writable<CloudConfig | null>(null);
@@ -137,11 +148,11 @@ function bindEvents() {
     if (typeof window === 'undefined') return;
     if (listeners.length > 0) return;
 
-        listeners.push(
-            listen<SyncStatus>('sync://status', (event) => {
-                syncStatus.set(event.payload);
-            }),
-            listen<{ version_id: string; progress: number }>(
+    listeners.push(
+        listen<SyncStatus>('sync://status', (event) => {
+            syncStatus.set(event.payload);
+        }),
+        listen<{ version_id: string; progress: number }>(
             'sync://download-progress',
             (event) => {
                 const payload = event.payload;
@@ -164,24 +175,38 @@ function bindEvents() {
                 error: null
             });
         }),
-            listen<{ version_id: string; message: string }>('sync://download-error', (event) => {
-                const payload = event.payload;
-                downloadState.set({
-                    versionId: payload.version_id,
-                    progress: 0,
-                    status: 'error',
-                    path: null,
-                    error: payload.message
-                });
-            }),
-            listen<{ gameId: string; message: string }>('sync://cloud-list-error', (event) => {
-                console.error('Cloud list error:', event.payload?.message ?? event.payload);
-            }),
-            listen('sync://online', () => onlineStatus.set('online')),
-            listen('sync://offline', () => onlineStatus.set('offline')),
-            listen('cloud://reconnect-started', () => onlineStatus.set('connecting')),
-            listen('cloud://online', () => onlineStatus.set('online')),
-            listen('cloud://reconnect-required', () => onlineStatus.set('failed')),
+        listen<{ version_id: string; message: string }>('sync://download-error', (event) => {
+            const payload = event.payload;
+            downloadState.set({
+                versionId: payload.version_id,
+                progress: 0,
+                status: 'error',
+                path: null,
+                error: payload.message
+            });
+        }),
+        listen<{ gameId: string; message: string }>('sync://cloud-list-error', (event) => {
+            console.error('Cloud list error:', event.payload?.message ?? event.payload);
+        }),
+        listen('sync://online', () => onlineStatus.set('online')),
+        listen('sync://offline', () => onlineStatus.set('offline')),
+        listen<ConnectionStatus>('connection-status', (event) => {
+            const status = event.payload;
+            const wasConnected = get(connectionStatus).connected;
+            connectionStatus.set(status);
+
+            // Auto-reload on reconnect
+            if (status.connected && !wasConnected) {
+                console.log('[CloudStore] Connection restored - reloading cloud data');
+                // Trigger reload of cloud data
+                cloudStore.getCloudStatus().catch((err: unknown) =>
+                    console.warn('[CloudStore] Failed to reload on reconnect:', err)
+                );
+            }
+        }),
+        listen('cloud://reconnect-started', () => onlineStatus.set('connecting')),
+        listen('cloud://online', () => onlineStatus.set('online')),
+        listen('cloud://reconnect-required', () => onlineStatus.set('failed')),
         listen<CloudDevice[]>('cloud://device-updated', (event) => {
             devices.set(event.payload ?? []);
         }),
@@ -293,7 +318,9 @@ export const cloudStore = {
             if (config?.mode) {
                 cloudMode.set(config.mode);
             }
-            if (config?.enabled && config?.api_key) {
+            // Restore login state if user has a token (api_key)
+            // Don't check 'enabled' flag - if they have a token, they're logged in
+            if (config?.api_key) {
                 authState.set({
                     isLoggedIn: true,
                     email: loadPersistedEmail(),
@@ -301,6 +328,17 @@ export const cloudStore = {
                     deviceId: config.device_id ?? null,
                     userId: config.user_id ?? null
                 });
+
+                // Check connection status if logged in and mode is not off
+                if (config.mode && config.mode !== 'off') {
+                    try {
+                        await invoke('get_cloud_status');
+                        // Status will be emitted via sync://online or sync://offline events
+                    } catch (error) {
+                        // Ignore errors, status events will handle it
+                        console.debug('Cloud status check failed:', error);
+                    }
+                }
             }
         } catch (error) {
             console.error('Failed to hydrate cloud auth state', error);
@@ -332,15 +370,25 @@ export const cloudStore = {
         bindEvents();
         try {
             const context = await getDeviceContext();
-            const deviceId = context.deviceId || generateDeviceId();
+            let deviceId = context.deviceId || generateDeviceId();
+
+            // Ensure deviceId is never empty
+            if (!deviceId || deviceId.trim() === '') {
+                deviceId = generateDeviceId();
+                console.log('[CloudStore] Generated new device ID:', deviceId);
+            }
+
             const platform = context.platform || detectPlatform();
             const deviceName = context.deviceName || 'Unknown Device';
+
+            console.log('[CloudStore] Signup with:', { email, deviceId, platform, deviceName });
+
             const result = await invoke<LoginResult>('signup_cloud', {
                 email,
                 password,
-                device_id: deviceId,
+                deviceId,  // camelCase for Tauri
                 platform,
-                device_name: deviceName
+                deviceName  // camelCase for Tauri
             });
             await persistEmail(email);
             authState.set({
@@ -353,6 +401,7 @@ export const cloudStore = {
             await this.listDevices();
             return { success: true };
         } catch (error: unknown) {
+            console.error('[CloudStore] Signup error:', error);
             const message = typeof error === 'string' ? error : (error as Error)?.message ?? 'Signup failed';
             authState.set({ isLoggedIn: false, email: null, token: null, deviceId: null, userId: null });
             return { success: false, error: message };
@@ -590,3 +639,4 @@ export const isSyncing = derived(syncStatus, ($status) => $status.is_syncing);
 export const isLoggedIn = derived(authState, ($auth) => $auth.isLoggedIn);
 export const userEmail = derived(authState, ($auth) => $auth.email);
 export const online = derived(onlineStatus, ($status) => $status === 'online');
+export const connectionStatusStore = connectionStatus;

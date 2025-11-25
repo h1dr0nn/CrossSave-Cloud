@@ -812,14 +812,53 @@ fn ensure_api_key(settings: &State<'_, Arc<SettingsManager>>) -> Result<String, 
 fn cloud_error_to_string(error: CloudError) -> String {
     match error {
         CloudError::NotEnabled => "Cloud sync is not enabled".to_string(),
-        CloudError::Disabled => "Cloud backend is disabled".to_string(),
-        CloudError::NetworkError(msg) => format!("Network error: {}", msg),
-        CloudError::StorageError(msg) => format!("Storage error: {}", msg),
-        CloudError::NotFound(msg) => format!("Not found: {}", msg),
-        CloudError::InvalidConfig(msg) => format!("Invalid configuration: {}", msg),
-        CloudError::Io(msg) => format!("IO error: {}", msg),
-        CloudError::Serialization(msg) => format!("Serialization error: {}", msg),
-        CloudError::Unauthorized(msg) => format!("Unauthorized: {}", msg),
+        CloudError::Disabled => "Cloud sync is disabled".to_string(),
+        CloudError::NetworkError(msg) => {
+            // Parse common network error patterns and provide user-friendly messages
+            if msg.contains("error sending request") || msg.contains("connection") {
+                "Unable to connect to cloud server. Please check your internet connection".to_string()
+            } else if msg.contains("timeout") || msg.contains("timed out") {
+                "Connection timed out. Please try again".to_string()
+            } else if msg.contains("dns") || msg.contains("resolve") {
+                "Cannot reach cloud server. Please check your internet connection".to_string()
+            } else {
+                "Network error. Please check your connection and try again".to_string()
+            }
+        }
+        CloudError::StorageError(msg) => {
+            if msg.contains("space") || msg.contains("full") {
+                "Not enough storage space".to_string()
+            } else {
+                "Storage error. Please try again".to_string()
+            }
+        }
+        CloudError::NotFound(msg) => {
+            if msg.contains("version") {
+                "Save version not found".to_string()
+            } else if msg.contains("game") {
+                "Game not found".to_string()
+            } else {
+                "Item not found".to_string()
+            }
+        }
+        CloudError::InvalidConfig(msg) => {
+            if msg.contains("api_key") || msg.contains("token") {
+                "Please log in to continue".to_string()
+            } else if msg.contains("base_url") {
+                "Cloud server URL is not configured".to_string()
+            } else {
+                "Configuration error. Please check your settings".to_string()
+            }
+        }
+        CloudError::Io(msg) => {
+            if msg.contains("permission") || msg.contains("denied") {
+                "Permission denied. Please check file permissions".to_string()
+            } else {
+                "File operation failed. Please try again".to_string()
+            }
+        }
+        CloudError::Serialization(_) => "Data format error. Please try again".to_string(),
+        CloudError::Unauthorized(msg) => msg, // Already user-friendly from cloud.rs
     }
 }
 
@@ -1077,4 +1116,95 @@ fn mode_to_str(mode: &CloudMode) -> &'static str {
         CloudMode::SelfHost => "self_host",
         CloudMode::Off => "off",
     }
+}
+
+// ============================================================================
+// Conflict Resolution Commands
+// ============================================================================
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ConflictDetails {
+    pub local_timestamp: u64,
+    pub cloud_timestamp: u64,
+}
+
+/// Get details about a conflict for a specific game
+#[tauri::command]
+pub async fn get_conflict_details(
+    game_id: String,
+    history: State<'_, Arc<HistoryManager>>,
+    cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+) -> Result<ConflictDetails, String> {
+    // Get local latest version
+    let local = history
+        .get_latest_version(&game_id)
+        .ok_or_else(|| "No local version found".to_string())?;
+
+    // Get cloud latest version
+    let backend = cloud.lock().await;
+    let cloud_versions = backend
+        .list_versions(game_id.clone(), Some(1))
+        .await
+        .map_err(|e| format!("Failed to list cloud versions: {e}"))?;
+
+    let cloud_latest = cloud_versions
+        .first()
+        .ok_or_else(|| "No cloud version found".to_string())?;
+
+    Ok(ConflictDetails {
+        local_timestamp: local.metadata.timestamp,
+        cloud_timestamp: cloud_latest.timestamp,
+    })
+}
+
+/// Force upload local save to resolve conflict
+#[tauri::command]
+pub async fn resolve_conflict_upload(
+    game_id: String,
+    sync: State<'_, SyncManager>,
+) -> Result<(), String> {
+    info!("[CONFLICT] Resolving by uploading local save for {}", game_id);
+    sync.trigger_sync();
+    Ok(())
+}
+
+/// Force download cloud save to resolve conflict
+#[tauri::command]
+pub async fn resolve_conflict_download(
+    game_id: String,
+    sync: State<'_, SyncManager>,
+    cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    history: State<'_, Arc<HistoryManager>>,
+    profiles: State<'_, Arc<RwLock<ProfileManager>>>,
+    settings: State<'_, Arc<SettingsManager>>,
+    app: AppHandle,
+) -> Result<(), String> {
+    info!("[CONFLICT] Resolving by downloading cloud save for {}", game_id);
+
+    // Get latest cloud version
+    let backend = cloud.lock().await;
+    let cloud_versions = backend
+        .list_versions(game_id.clone(), Some(1))
+        .await
+        .map_err(|e| format!("Failed to list cloud versions: {e}"))?;
+
+    let cloud_latest = cloud_versions
+        .first()
+        .ok_or_else(|| "No cloud version found".to_string())?;
+
+    let version_id = cloud_latest.version_id.clone();
+    drop(backend);
+
+    // Perform download
+    perform_download(
+        cloud.inner().clone(),
+        history.inner().clone(),
+        profiles.inner().clone(),
+        app,
+        settings.inner().clone(),
+        game_id,
+        version_id,
+    )
+    .await
+    .map_err(|e| format!("Download failed: {e}"))
 }

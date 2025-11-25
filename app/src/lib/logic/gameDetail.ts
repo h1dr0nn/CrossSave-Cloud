@@ -8,6 +8,8 @@ import {
   type HistoryEntry,
 } from "../api";
 import { pushError, pushInfo } from "../notifications";
+import { formatErrorMessage } from "../errorMessages";
+import { settingsStore } from "../settingsStore";
 
 interface WatcherEvent {
   timestamp: Date;
@@ -26,7 +28,7 @@ export function createGameDetailLogic(gameId: string) {
   const changesDetected = writable(false);
   const autoPackageEnabled = writable(false);
   const trackedPatterns = writable<string[]>([]);
-  
+
   let patternsLoadedFor = "";
   let unlistenWatcher: (() => void) | null = null;
 
@@ -42,22 +44,27 @@ export function createGameDetailLogic(gameId: string) {
       loading.set(false);
       return;
     }
-    
+
+    console.log(`[GameDetail] loadHistory started for: ${gameId}`);
     try {
       if (get(loading)) {
         history.set([]);
       }
       reloading.set(true);
+      console.log("[GameDetail] reloading set to TRUE, starting 1s delay");
       const minTime = new Promise((resolve) => setTimeout(resolve, 1000));
       const [entries] = await Promise.all([listHistory(gameId), minTime]);
+      console.log(`[GameDetail] loadHistory completed, found ${entries.length} entries`);
       history.set(
         [...entries].sort((a, b) => b.metadata.timestamp - a.metadata.timestamp)
       );
     } catch (error) {
-      pushError(`Failed to load history: ${error}`);
+      console.error("[GameDetail] loadHistory error:", error);
+      pushError(formatErrorMessage(error));
     } finally {
       loading.set(false);
       reloading.set(false);
+      console.log("[GameDetail] reloading set to FALSE");
     }
   }
 
@@ -76,20 +83,30 @@ export function createGameDetailLogic(gameId: string) {
     }
   }
 
-  async function packageNow(emulatorId: string) {
+  async function packageNow(emulatorId: string, gameName?: string) {
     if (!emulatorId) {
       pushError("Missing emulator id for packaging");
+      console.error("[PACKAGE] Missing emulatorId");
       return;
     }
 
+    const actualGameId = gameName || gameId;
+    console.log(`[PACKAGE] Starting package for game: ${actualGameId}, emulator: ${emulatorId}`);
     packaging.set(true);
     try {
-      await packageGame(emulatorId, gameId);
+      await packageGame(emulatorId, actualGameId);
       pushInfo("Packaging completed");
+      console.log("[PACKAGE] Packaging completed successfully");
       await loadHistory();
       changesDetected.set(false);
+
+      // Refresh storage info for Settings/Storage page
+      settingsStore.refreshStorage().catch(err =>
+        console.warn("[PACKAGE] Failed to refresh storage info:", err)
+      );
     } catch (error) {
-      pushError(`Packaging failed: ${error}`);
+      console.error("[PACKAGE] Packaging failed:", error);
+      pushError(formatErrorMessage(error));
     } finally {
       packaging.set(false);
     }
@@ -99,7 +116,7 @@ export function createGameDetailLogic(gameId: string) {
     if (typeof localStorage === "undefined") return;
     const stored = localStorage.getItem(AUTO_PACKAGE_STORAGE_KEY);
     autoPackageEnabled.set(stored === "true");
-    
+
     // Subscribe to changes to persist
     autoPackageEnabled.subscribe((value) => {
       if (typeof localStorage !== "undefined") {
@@ -141,7 +158,7 @@ export function createGameDetailLogic(gameId: string) {
       ? new Date(payload.timestamp)
       : new Date();
     const fileName = payload.path.split(/[/\\]/).pop() || payload.path;
-    
+
     watcherEvents.update(events => [
       {
         timestamp,
@@ -177,15 +194,15 @@ export function createGameDetailLogic(gameId: string) {
     try {
       unlistenWatcher = await subscribeFsEvents((payload) => {
         appendWatcherEvent(payload);
-        
+
         // Handle auto-package here
         if (pathMatches(payload.path, get(trackedPatterns))) {
-             if (get(autoPackageEnabled) && !get(packaging)) {
-                 const emuId = get(emulatorIdStore);
-                 if (emuId) {
-                     packageNow(emuId);
-                 }
-             }
+          if (get(autoPackageEnabled) && !get(packaging)) {
+            const emuId = get(emulatorIdStore);
+            if (emuId) {
+              packageNow(emuId);
+            }
+          }
         }
       });
     } catch (error) {

@@ -3,6 +3,7 @@
   import { packageSave } from "../../lib/api";
   import { addHistoryEntry } from "../../lib/historyStore";
   import { pushError, pushInfo } from "../../lib/notifications";
+  import { formatErrorMessage } from "../../lib/errorMessages";
 
   let gameId = "";
   let emulatorId = "";
@@ -34,7 +35,7 @@
         `Packaged ${response.packaged.metadata.version_id} and saved to history`
       );
     } catch (error) {
-      pushError(`Package failed: ${error}`);
+      pushError(formatErrorMessage(error));
     } finally {
       packaging = false;
     }

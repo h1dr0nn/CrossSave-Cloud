@@ -3,14 +3,15 @@ mod core;
 
 use api::cloud_api::{
     download_cloud_save, download_cloud_version, get_cloud_config, get_cloud_status,
-    get_upload_url, list_cloud_devices, list_cloud_versions, login_cloud, logout_cloud,
-    notify_upload, reconnect_cloud, register_cloud_device, remove_cloud_device, signup_cloud,
-    update_cloud_config, update_cloud_mode, upload_cloud_save, validate_official_cloud_settings,
+    get_conflict_details, get_upload_url, list_cloud_devices, list_cloud_versions, login_cloud,
+    logout_cloud, notify_upload, reconnect_cloud, register_cloud_device, remove_cloud_device,
+    resolve_conflict_download, resolve_conflict_upload, signup_cloud, update_cloud_config,
+    update_cloud_mode, upload_cloud_save, validate_official_cloud_settings,
     validate_self_host_settings,
 };
 use api::explorer_api::{check_path_status, open_folder, scan_save_files};
 use api::history_api::{delete_history_item, get_history_item, list_history, rollback_version};
-use api::packager_api::{package_save, validate_paths};
+use api::packager_api::{package_game, package_save, validate_paths};
 use api::profile_api::{delete_profile, get_profile, list_profiles, save_profile};
 use api::settings_api::{
     clear_history_cache, get_app_settings, get_storage_info, update_app_settings,
@@ -27,6 +28,7 @@ use core::sync::SyncManager;
 use core::watcher::WatcherManager;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use tracing::info;
 use tauri::Emitter;
 use tauri::Manager;
 use tokio::sync::Mutex;
@@ -162,9 +164,13 @@ pub fn run() {
 
             // Start background tasks after all state is managed
             // Use tauri::async_runtime to spawn in Tauri's runtime context
+            info!("[INIT] About to spawn SyncManager background task...");
             tauri::async_runtime::spawn(async move {
+                info!("[INIT] Inside async block, calling start_background_task()");
                 sync_manager.start_background_task();
+                info!("[INIT] start_background_task() returned");
             });
+            info!("[INIT] Background task spawned");
 
             Ok(())
         })
@@ -178,6 +184,7 @@ pub fn run() {
             save_profile,
             delete_profile,
             package_save,
+            package_game,
             validate_paths,
             list_history,
             get_history_item,
@@ -212,6 +219,9 @@ pub fn run() {
             get_sync_status,
             force_sync_now,
             clear_sync_queue,
+            get_conflict_details,
+            resolve_conflict_upload,
+            resolve_conflict_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

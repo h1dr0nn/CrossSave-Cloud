@@ -105,3 +105,87 @@ pub async fn validate_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
 
     join_result
 }
+
+/// Package a game using its emulator profile configuration
+#[tauri::command(rename_all = "snake_case")]
+pub async fn package_game(
+    history: tauri::State<'_, std::sync::Arc<HistoryManager>>,
+    profiles: tauri::State<'_, std::sync::Arc<std::sync::RwLock<crate::core::profile::ProfileManager>>>,
+    emulator_id: String,
+    game_id: String,
+) -> Result<PackageResponse, String> {
+    // Get profile configuration
+    let (paths, patterns) = {
+        let manager = profiles.read().map_err(|e| e.to_string())?;
+        let profile = manager
+            .get_profile(&emulator_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Profile {} not found", emulator_id))?;
+
+        (
+            profile.default_save_paths.clone(),
+            profile.file_patterns.clone(),
+        )
+    };
+
+    info!(
+        "[PACKAGER] Packaging game {} with profile {}",
+        game_id, emulator_id
+    );
+
+    // Convert to PathBuf
+    let sanitized_paths: Vec<PathBuf> = paths
+        .into_iter()
+        .filter(|path| !path.trim().is_empty())
+        .map(PathBuf::from)
+        .collect();
+
+    if sanitized_paths.is_empty() {
+        warn!("[PACKAGER] No valid paths in profile {}", emulator_id);
+        return Err(format!("Profile {} has no valid paths", emulator_id));
+    }
+
+    let sanitized_patterns: Vec<String> = patterns
+        .into_iter()
+        .filter(|pattern| !pattern.trim().is_empty())
+        .collect();
+
+    // Package the save
+    let packager = SavePackager::new(game_id, emulator_id);
+
+    let join_result = tauri::async_runtime::spawn_blocking(move || {
+        let mut packager = packager;
+        match packager.package_save(sanitized_paths, sanitized_patterns) {
+            Ok(result) => {
+                info!("[PACKAGER] Game packaging completed");
+                Ok(result)
+            }
+            Err(err) => {
+                error!("[PACKAGER] Game packaging failed: {err}");
+                Err(err.to_string())
+            }
+        }
+    })
+    .await
+    .map_err(|err| err.to_string())?;
+
+    let packaged = join_result?;
+
+    // Save to history
+    let history_entry = history
+        .save_to_history(
+            packaged.metadata.clone(),
+            PathBuf::from(&packaged.archive_path),
+        )
+        .map_err(|err| {
+            error!("[PACKAGER] Failed to write history: {err}");
+            err.to_string()
+        })?;
+
+    info!("[PACKAGER] Game saved to history");
+
+    Ok(PackageResponse {
+        packaged,
+        history: history_entry,
+    })
+}

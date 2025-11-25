@@ -8,7 +8,6 @@ use std::sync::{
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use futures::StreamExt;
 use reqwest::{header::CONTENT_LENGTH, header::CONTENT_TYPE, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -39,6 +38,13 @@ pub enum SyncDecision {
     Download(String), // version_id
     Conflict,
     Noop,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConnectionStatus {
+    pub connected: bool,
+    pub last_success: Option<u64>, // timestamp in seconds
+    pub last_error: Option<String>,
 }
 
 /// Determines the sync action based on local and cloud state.
@@ -268,11 +274,21 @@ impl UploadQueue {
     }
 
     pub async fn add_job(&self, job: UploadJob) {
-        let mut q = self.queue.lock().await;
-        // Avoid duplicates
-        if !q.iter().any(|j| j.version_id == job.version_id) {
-            q.push_back(job);
-            self.notify.notify_one();
+        let should_notify = {
+            let mut q = self.queue.lock().await;
+            // Avoid duplicates
+            if !q.iter().any(|j| j.version_id == job.version_id) {
+                q.push_back(job.clone());
+                info!("[QUEUE] Added job for game_id={}, queue length={}", job.game_id, q.len());
+                true // Will notify after dropping lock
+            } else {
+                warn!("[QUEUE] Duplicate job detected for version_id={}, skipping", job.version_id);
+                false
+            }
+        }; // Lock dropped here
+        
+        if should_notify {
+            self.notify.notify_one(); // Notify AFTER lock is dropped
             self.emit_status().await;
             self.save_to_disk().await;
         }
@@ -302,8 +318,23 @@ impl UploadQueue {
             let _ = fs::create_dir_all(parent);
         }
         let q = self.queue.lock().await;
-        if let Ok(json) = serde_json::to_string_pretty(&q.clone().into_iter().collect::<Vec<_>>()) {
-            let _ = fs::write(&self.queue_path, json);
+        // Only save pending and uploading jobs, not completed or failed
+        let jobs_to_save: Vec<UploadJob> = q
+            .iter()
+            .filter(|job| {
+                matches!(
+                    job.status,
+                    UploadStatus::Pending | UploadStatus::Uploading
+                )
+            })
+            .cloned()
+            .collect();
+
+        if let Err(e) = std::fs::write(
+            &self.queue_path,
+            serde_json::to_string_pretty(&jobs_to_save).unwrap_or_default(),
+        ) {
+            warn!("[QUEUE] Failed to save queue to disk: {}", e);
         }
     }
 
@@ -347,23 +378,34 @@ impl UploadQueue {
         cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>,
         settings: Arc<SettingsManager>,
     ) {
+        info!("[QUEUE] Queue processor started");
         loop {
+            debug!("[QUEUE] Loop iteration start");
             if !self.online_status.load(Ordering::SeqCst) {
+                debug!("[QUEUE] Waiting for online status...");
                 self.wait_for_online().await;
                 continue;
             }
+            debug!("[QUEUE] Online status OK, proceeding to check queue");
 
             // Wait for a job
             let job = {
                 let mut q = self.queue.lock().await;
+                let queue_len = q.len();
+                debug!("[QUEUE] Acquired queue lock, queue length={}", queue_len);
                 if q.is_empty() {
                     None
                 } else {
-                    q.pop_front()
+                    let job = q.pop_front();
+                    if job.is_some() {
+                        info!("[QUEUE] Popped job from queue, {} jobs remaining", q.len());
+                    }
+                    job
                 }
             };
 
             if let Some(mut job) = job {
+                info!("[QUEUE] Processing upload job for game_id={}", job.game_id);
                 // Set active
                 {
                     let mut active = self.active_job.lock().await;
@@ -416,11 +458,17 @@ impl UploadQueue {
                 }
                 self.emit_status().await;
             } else {
-                // Wait for notification
+                // Queue is empty, wait for notification
+                debug!("[QUEUE] Queue empty, waiting for notification...");
                 tokio::select! {
-                    _ = self.notify.notified() => {},
-                    _ = self.online_notify.notified() => {},
+                    _ = self.notify.notified() => {
+                        debug!("[QUEUE] Woke up from notify signal");
+                    },
+                    _ = self.online_notify.notified() => {
+                        debug!("[QUEUE] Woke up from online signal");
+                    },
                 }
+                debug!("[QUEUE] Notification received, looping back to check queue");
             }
         }
     }
@@ -680,6 +728,7 @@ pub struct SyncManager {
     pub settings: Arc<SettingsManager>,
     online: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
+    connection_status: Arc<RwLock<ConnectionStatus>>,
     app_handle: AppHandle,
     sync_trigger: Arc<Notify>,
     running: Arc<AtomicBool>,
@@ -696,6 +745,11 @@ impl SyncManager {
         let online = Arc::new(AtomicBool::new(true));
         let paused = Arc::new(AtomicBool::new(false));
         let queue = Arc::new(UploadQueue::new(app_handle.clone(), online.clone()));
+        let connection_status = Arc::new(RwLock::new(ConnectionStatus {
+            connected: false,
+            last_success: None,
+            last_error: None,
+        }));
 
         Self {
             queue,
@@ -705,6 +759,7 @@ impl SyncManager {
             settings,
             online,
             paused,
+            connection_status,
             app_handle,
             sync_trigger: Arc::new(Notify::new()),
             running: Arc::new(AtomicBool::new(false)),
@@ -716,8 +771,10 @@ impl SyncManager {
     }
 
     pub fn start_background_task(&self) {
+        info!("[SYNC] start_background_task() called - initializing background tasks");
         let queue = self.queue.clone();
         let cloud = self.cloud.clone();
+        let cloud_for_monitor = self.cloud.clone(); // Clone for monitoring loop
         let settings_for_ping = self.settings.clone();
         let app_for_ping = self.app_handle.clone();
         let online_flag = self.online.clone();
@@ -731,21 +788,51 @@ impl SyncManager {
             queue.process_queue(cloud, settings_for_queue).await;
         });
 
-        // Connectivity monitor
+        // Enhanced connectivity monitor with connection status tracking
+        let connection_status_clone = self.connection_status.clone();
         tokio::spawn(async move {
+            info!("[SYNC] Connection monitoring loop started");
             loop {
-                let online = check_online(&settings_for_ping).await;
-                let previous = online_flag.swap(online, Ordering::SeqCst);
+                // Check connection using backend's check_connection method
+                debug!("[SYNC] Checking connection...");
+                let backend = cloud_for_monitor.lock().await;
+                let connected = backend.check_connection().await.unwrap_or(false);
+                drop(backend);
+                
+                info!("[SYNC] Connection status: {}", if connected { "ONLINE" } else { "OFFLINE" });
+                
+                let previous = online_flag.swap(connected, Ordering::SeqCst);
+                
+                // Update connection status
+                if let Ok(mut status) = connection_status_clone.write() {
+                    status.connected = connected;
+                    if connected {
+                        status.last_success = Some(
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs()
+                        );
+                        status.last_error = None;
+                    }
+                    
+                    // Emit connection status event to frontend
+                    let _ = app_for_ping.emit("connection-status", status.clone());
+                    debug!("[SYNC] Emitted connection-status event: connected={}", status.connected);
+                }
 
-                if online && !previous {
+                // Handle state transitions
+                if connected && !previous {
+                    info!("[SYNC] Connection restored - triggering sync");
                     let _ = app_for_ping.emit("sync://online", "online");
                     queue_for_online.signal_online();
                     trigger_for_online.notify_one();
-                } else if !online && previous {
+                } else if !connected && previous {
+                    warn!("[SYNC] Connection lost");
                     let _ = app_for_ping.emit("sync://offline", "offline");
                 }
 
-                sleep(Duration::from_secs(15)).await;
+                sleep(Duration::from_secs(30)).await; // Check every 30 seconds
             }
         });
 
@@ -776,15 +863,16 @@ impl SyncManager {
                     }
                 }
 
-                // Check if sync is enabled
-                let (enabled, mode) = settings_clone
+                // Check if cloud mode is enabled (not Off)
+                let mode = settings_clone
                     .get_settings()
-                    .map(|s| (s.cloud.enabled, s.cloud_mode))
-                    .unwrap_or((false, crate::core::settings::CloudMode::Off));
+                    .map(|s| s.cloud_mode)
+                    .unwrap_or(crate::core::settings::CloudMode::Off);
 
                 let tag = log_tag(&mode);
 
-                if !enabled {
+                // Skip sync if cloud mode is Off
+                if mode == crate::core::settings::CloudMode::Off {
                     continue;
                 }
 
@@ -937,6 +1025,7 @@ impl Clone for SyncManager {
             settings: self.settings.clone(),
             online: self.online.clone(),
             paused: self.paused.clone(),
+            connection_status: self.connection_status.clone(),
             app_handle: self.app_handle.clone(),
             sync_trigger: self.sync_trigger.clone(),
             running: self.running.clone(),
@@ -1020,7 +1109,7 @@ pub async fn perform_download(
     );
 
     let client = Client::new();
-    let mut response = client
+    let response = client
         .get(&download_info.download_url)
         .send()
         .await
@@ -1038,23 +1127,25 @@ pub async fn perform_download(
         .await
         .map_err(|e| emit_error("write-file", e.to_string(), &app_handle))?;
 
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| emit_error("http-get", e.to_string(), &app_handle))?;
-        received_bytes += chunk.len() as u64;
-        file.write_all(&chunk)
-            .await
-            .map_err(|e| emit_error("write-file", e.to_string(), &app_handle))?;
+    // Download the entire file
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| emit_error("http-get", e.to_string(), &app_handle))?;
+    
+    received_bytes = bytes.len() as u64;
+    file.write_all(&bytes)
+        .await
+        .map_err(|e| emit_error("write-file", e.to_string(), &app_handle))?;
 
-        let _ = app_handle.emit(
-            "sync://download-progress",
-            DownloadProgressPayload {
-                version_id: version_id.clone(),
-                received_bytes,
-                total_bytes,
-            },
-        );
-    }
+    let _ = app_handle.emit(
+        "sync://download-progress",
+        DownloadProgressPayload {
+            version_id: version_id.clone(),
+            received_bytes,
+            total_bytes,
+        },
+    );
 
     file.flush()
         .await

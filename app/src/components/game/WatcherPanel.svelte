@@ -8,6 +8,7 @@
     subscribeFsEvents,
   } from "../../lib/api";
   import { pushError, pushInfo } from "../../lib/notifications";
+  import { formatErrorMessage } from "../../lib/errorMessages";
   import { addHistoryEntry } from "../../lib/historyStore";
 
   let pathsInput = "";
@@ -51,7 +52,7 @@
       statusMessage = "Watcher started";
       pushInfo("Watcher started");
     } catch (error) {
-      pushError(`Watcher start failed: ${error}`);
+      pushError(formatErrorMessage(error));
     }
   };
 
@@ -62,7 +63,7 @@
       statusMessage = "Watcher stopped";
       pushInfo("Watcher stopped");
     } catch (error) {
-      pushError(`Watcher stop failed: ${error}`);
+      pushError(formatErrorMessage(error));
     }
   };
 
@@ -88,7 +89,7 @@
         `Packaged ${response.packaged.metadata.version_id} and saved to history`
       );
     } catch (error) {
-      pushError(`Manual package failed: ${error}`);
+      pushError(formatErrorMessage(error));
     } finally {
       packaging = false;
     }

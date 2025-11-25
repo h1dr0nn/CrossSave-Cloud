@@ -3,6 +3,7 @@
 
   import { deleteHistoryItem, rollbackVersion } from "../../lib/api";
   import { pushError, pushInfo } from "../../lib/notifications";
+  import { formatErrorMessage } from "../../lib/errorMessages";
   import type { HistoryEntry } from "../../lib/api";
 
   export let gameId: string;
@@ -53,7 +54,7 @@
       pushInfo(`Restored version ${versionId}`);
       dispatch("reload");
     } catch (error) {
-      pushError(`Restore failed: ${error}`);
+      pushError(formatErrorMessage(error));
     } finally {
       workingId = null;
     }
@@ -66,7 +67,7 @@
       pushInfo(`Deleted version ${versionId}`);
       dispatch("reload");
     } catch (error) {
-      pushError(`Delete failed: ${error}`);
+      pushError(formatErrorMessage(error));
     } finally {
       workingId = null;
     }

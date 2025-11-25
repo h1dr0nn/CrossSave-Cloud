@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use reqwest::{
@@ -11,11 +12,33 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::core::packager::SaveMetadata;
 use crate::core::settings::{CloudMode, SettingsManager};
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+/// Sanitize game_id to match backend validation: /^[A-Za-z0-9_.-]{1,128}$/
+/// Replaces spaces and other invalid characters with underscores
+fn sanitize_game_id(game_id: &str) -> String {
+    game_id
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '.' || c == '-' {
+                c
+            } else {
+                '_' // Replace invalid chars (including spaces) with underscore
+            }
+        })
+        .collect::<String>()
+        .chars()
+        .take(128) // Limit to 128 chars
+        .collect()
+}
 
 // =============================================================================
 // Configuration
@@ -38,7 +61,7 @@ impl Default for CloudConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            base_url: "https://api.crosssave.local".to_string(),
+            base_url: "https://crosssave-official-cloud.hdrn151.workers.dev".to_string(),
             api_key: String::new(),
             device_id: String::new(),
             device_name: String::new(),
@@ -183,6 +206,9 @@ pub trait CloudBackend: Send + Sync {
     ) -> Result<(), CloudError>;
     async fn remove_device(&self, token: String, device_id: String) -> Result<(), CloudError>;
     fn get_device_id(&self) -> Result<String, CloudError>;
+    
+    /// Check if the cloud backend is reachable and healthy
+    async fn check_connection(&self) -> Result<bool, CloudError>;
 }
 
 // =============================================================================
@@ -270,6 +296,10 @@ impl CloudBackend for DisabledCloudBackend {
 
     fn get_device_id(&self) -> Result<String, CloudError> {
         Err(CloudError::Disabled)
+    }
+    
+    async fn check_connection(&self) -> Result<bool, CloudError> {
+        Ok(false) // Disabled backend is never connected
     }
 }
 
@@ -387,7 +417,7 @@ impl HttpCloudBackend {
             .map_err(|e| CloudError::InvalidConfig(format!("client build failed: {e}")))?;
 
         let log_tag = log_tag(&mode);
-        let access_headers = Self::collect_access_headers(mode);
+        let access_headers = Self::collect_access_headers(mode.clone());
 
         Ok(Self {
             client,
@@ -522,15 +552,24 @@ impl CloudBackend for HttpCloudBackend {
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
         if !resp.status().is_success() {
+            let status = resp.status();
             warn!(
                 "{} Signup failed with status {}",
                 self.log_tag,
-                resp.status()
+                status
             );
-            return Err(CloudError::Unauthorized(format!(
-                "status {}",
-                resp.status(),
-            )));
+            
+            // Return user-friendly error messages based on status code
+            let error_message = match status.as_u16() {
+                409 => "This email address is already registered".to_string(),
+                400 => "Invalid email or password format".to_string(),
+                401 => "Authentication failed".to_string(),
+                403 => "Access denied".to_string(),
+                500..=599 => "Server error. Please try again later".to_string(),
+                _ => format!("Signup failed. Please try again"),
+            };
+            
+            return Err(CloudError::Unauthorized(error_message));
         }
 
         let parsed: SignupResponse = resp
@@ -580,15 +619,24 @@ impl CloudBackend for HttpCloudBackend {
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
         if !resp.status().is_success() {
+            let status = resp.status();
             warn!(
                 "{} Login failed with status {}",
                 self.log_tag,
-                resp.status()
+                status
             );
-            return Err(CloudError::Unauthorized(format!(
-                "status {}",
-                resp.status(),
-            )));
+            
+            // Return user-friendly error messages based on status code
+            let error_message = match status.as_u16() {
+                401 => "Invalid email or password".to_string(),
+                404 => "Account not found".to_string(),
+                403 => "Access denied".to_string(),
+                429 => "Too many login attempts. Please try again later".to_string(),
+                500..=599 => "Server error. Please try again later".to_string(),
+                _ => "Login failed. Please try again".to_string(),
+            };
+            
+            return Err(CloudError::Unauthorized(error_message));
         }
 
         let parsed: LoginResponse = resp
@@ -706,6 +754,15 @@ impl CloudBackend for HttpCloudBackend {
         let device_id = self.ensure_device_registered().await?;
         let mut payload = payload;
         payload.device_id = Some(device_id);
+        
+        // Sanitize game_id to match backend validation (no spaces allowed)
+        let original_game_id = payload.game_id.clone();
+        payload.game_id = sanitize_game_id(&payload.game_id);
+        debug!(
+            "{} request_upload_url: original_game_id={}, sanitized_game_id={}",
+            self.log_tag, original_game_id, payload.game_id
+        );
+        
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
@@ -780,12 +837,19 @@ impl CloudBackend for HttpCloudBackend {
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
+        // Sanitize game_id to match backend validation
+        let sanitized_game_id = sanitize_game_id(&game_id);
+        debug!(
+            "{} request_download_url: original_game_id={}, sanitized_game_id={}",
+            self.log_tag, game_id, sanitized_game_id
+        );
+
         let resp = self
             .apply_access_headers(
                 self.client
                     .post(format!("{}/save/download-url", base_url))
                     .header("Authorization", auth)
-                    .json(&serde_json::json!({ "game_id": game_id, "version_id": version_id })),
+                    .json(&serde_json::json!({ "game_id": sanitized_game_id, "version_id": version_id })),
             )
             .send()
             .await
@@ -815,12 +879,21 @@ impl CloudBackend for HttpCloudBackend {
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
+        // Sanitize game_id to match backend validation
+        let sanitized_game_id = sanitize_game_id(&game_id);
+        debug!(
+            "{} list_versions: original_game_id={}, sanitized_game_id={}",
+            self.log_tag, game_id, sanitized_game_id
+        );
+
+        let payload = serde_json::json!({ "game_id": sanitized_game_id.clone() });
+
         let resp = self
             .apply_access_headers(
                 self.client
                     .post(format!("{}/save/list", base_url))
                     .header("Authorization", auth)
-                    .json(&serde_json::json!({ "game_id": game_id.clone() })),
+                    .json(&payload),
             )
             .send()
             .await
@@ -831,9 +904,15 @@ impl CloudBackend for HttpCloudBackend {
         }
 
         if !resp.status().is_success() {
+            let status = resp.status();
+            let error_body = resp.text().await.unwrap_or_else(|_| "unable to read error body".to_string());
+            error!(
+                "{} list_versions failed: status={}, game_id={}, error={}",
+                self.log_tag, status, game_id, error_body
+            );
             return Err(CloudError::NetworkError(format!(
-                "list failed: {}",
-                resp.status()
+                "list failed: {} - {}",
+                status, error_body
             )));
         }
 
@@ -1105,6 +1184,39 @@ impl CloudBackend for HttpCloudBackend {
             return Err(CloudError::NotFound("device_id not registered".into()));
         }
         Ok(config.device_id)
+    }
+    
+    async fn check_connection(&self) -> Result<bool, CloudError> {
+        let base_url = match self.validate_base_url() {
+            Ok(url) => url,
+            Err(_) => {
+                debug!("[CLOUD] check_connection: Invalid base URL");
+                return Ok(false); // Invalid config = not connected
+            }
+        };
+        
+        debug!("[CLOUD] check_connection: Checking {}/api/games", base_url);
+        
+        // Simple HEAD request to check if server is reachable
+        // ANY HTTP response (even 404) means server is online
+        match self.client
+            .head(format!("{}/api/games", base_url))
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                // Any response means server is reachable = online
+                // This includes 404, 401, 500, etc.
+                debug!("[CLOUD] check_connection: Got response status={}, server is ONLINE", resp.status());
+                Ok(true)
+            }
+            Err(e) => {
+                // Only network/timeout errors mean offline
+                debug!("[CLOUD] check_connection: Request failed: {}, server is OFFLINE", e);
+                Ok(false)
+            }
+        }
     }
 }
 

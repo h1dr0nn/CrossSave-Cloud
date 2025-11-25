@@ -10,7 +10,8 @@ use crate::core::settings::{
 #[derive(Debug, Serialize)]
 pub struct StorageInfo {
     pub history_path: String,
-    pub size_bytes: u64,
+    pub total_size_bytes: u64,
+    pub total_versions: usize,
     pub retention_bounds: (usize, usize),
 }
 
@@ -45,11 +46,22 @@ pub async fn update_app_settings(
 pub async fn get_storage_info(
     history: tauri::State<'_, Arc<HistoryManager>>,
 ) -> Result<StorageInfo, String> {
-    let size_bytes = history.total_size().map_err(|err| err.to_string())?;
+    let total_size_bytes = history.total_size().map_err(|err| err.to_string())?;
     let bounds = default_retention_bounds();
+    
+    // Count total versions across all games
+    let games = history.get_games();
+    let mut total_versions = 0;
+    for game_id in games {
+        if let Ok(entries) = history.list_history(game_id) {
+            total_versions += entries.len();
+        }
+    }
+    
     Ok(StorageInfo {
         history_path: history.base_dir.to_string_lossy().to_string(),
-        size_bytes,
+        total_size_bytes,
+        total_versions,
         retention_bounds: bounds,
     })
 }

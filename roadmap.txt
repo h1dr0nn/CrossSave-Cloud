@@ -97,7 +97,7 @@ STATUS: DONE
 
 ========================================
 PHASE 4 — CLOUD MODES & DEPLOYMENT
-STATUS: PENDING
+STATUS: IN PROGRESS
 ========================================
 
 Goal: Support 3 fully independent cloud modes  
@@ -105,13 +105,13 @@ Goal: Support 3 fully independent cloud modes
 - SELF-HOST (Docker backend the user controls)  
 - SYNC OFF (local-only)
 
-4.1 Cloud Mode Switcher  
+4.1 Cloud Mode Switcher (DONE)
 - Add global selector: OFFICIAL / SELF_HOST / SYNC_OFF  
 - Automatically switch cloud backend implementation  
 - Disable all cloud actions when SYNC_OFF  
 - UI indicator for current cloud mode  
 
-4.2 Official Cloud (Cloudflare Worker + R2 + Presigned Upload/Download)  
+4.2 Official Cloud (Cloudflare Worker + R2 + Presigned Upload/Download) (DONE)
 - Worker endpoints:  
   - `/login`, `/device/register`, `/device/list`  
   - `/save/upload-url` (presigned PUT)  

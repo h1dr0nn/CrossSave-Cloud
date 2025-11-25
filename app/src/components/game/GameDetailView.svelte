@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { get } from "svelte/store";
   import AppHeader from "../layout/AppHeader.svelte";
   import GameIcon from "./GameIcon.svelte";
   import CompareVersionDrawer from "./CompareVersionDrawer.svelte";
@@ -53,6 +54,17 @@
   });
 
   onMount(() => {
+    console.log(`[GameDetail] Mounted for gameId: ${gameId}`);
+
+    // Ensure emulatorId is set immediately
+    const initialEmulatorId = deriveEmulatorId(gameId);
+    console.log(
+      `[GameDetail] Initial emulatorId from derive: ${initialEmulatorId}`
+    );
+    if (initialEmulatorId && !get(emulatorIdStore)) {
+      setEmulatorId(initialEmulatorId);
+    }
+
     loadHistory();
     hydrateAutoPackage();
     startWatcherFeed();
@@ -62,13 +74,26 @@
     cleanup();
   });
 
-  // Reactive derived state
+  // Reactive derived state - ensure it's never empty
   $: effectiveEmulatorId =
-    $latestEntry?.metadata.emulator_id ??
-    $emulatorIdStore ??
-    deriveEmulatorId(gameId);
+    $latestEntry?.metadata.emulator_id ||
+    $emulatorIdStore ||
+    deriveEmulatorId(gameId) ||
+    "retroarch"; // Fallback to retroarch
+
+  $: {
+    console.log(
+      `[GameDetail] effectiveEmulatorId changed to: "${effectiveEmulatorId}"`
+    );
+    console.log(
+      `[GameDetail] - from latestEntry: ${$latestEntry?.metadata.emulator_id ?? "null"}`
+    );
+    console.log(`[GameDetail] - from store: ${$emulatorIdStore ?? "null"}`);
+    console.log(`[GameDetail] - from derive: ${deriveEmulatorId(gameId)}`);
+  }
 
   $: if (effectiveEmulatorId && effectiveEmulatorId !== $emulatorIdStore) {
+    console.log(`[GameDetail] Setting emulatorId to: ${effectiveEmulatorId}`);
     setEmulatorId(effectiveEmulatorId);
   }
 
@@ -123,7 +148,16 @@
   }
 
   function handlePackage() {
-    packageNow(effectiveEmulatorId);
+    // Extract game name from file path
+    // gameId might be a full path like "/path/to/game.srm"
+    // We need just the basename without extension
+    const gameBasename = gameId.split(/[/\\]/).pop() || gameId;
+    const gameName = gameBasename.replace(/\.[^/.]+$/, ""); // Remove extension
+
+    console.log(
+      `[GameDetail] Packaging: gameId="${gameId}", extracted name="${gameName}"`
+    );
+    packageNow(effectiveEmulatorId, gameName);
   }
 </script>
 

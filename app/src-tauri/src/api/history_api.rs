@@ -13,7 +13,7 @@ fn sanitize_input(value: String, field: &str) -> Result<String, String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn list_history(
     state: tauri::State<'_, Arc<HistoryManager>>,
     game_id: String,
@@ -26,7 +26,7 @@ pub async fn list_history(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn get_history_item(
     state: tauri::State<'_, Arc<HistoryManager>>,
     game_id: String,
@@ -43,7 +43,7 @@ pub async fn get_history_item(
         })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn rollback_version(
     state: tauri::State<'_, Arc<HistoryManager>>,
     game_id: String,
@@ -60,7 +60,7 @@ pub async fn rollback_version(
         })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn delete_history_item(
     state: tauri::State<'_, Arc<HistoryManager>>,
     game_id: String,

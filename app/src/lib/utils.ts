@@ -15,7 +15,7 @@ export function extractGameName(path: string): string {
   const name = filename.replace(/\.[^/.]+$/, "");
   // Clean up underscores and dashes
   const clean = name.replace(/[_-]+/g, " ").trim();
-  
+
   // Capitalize first letter of each word
   return clean
     .split(" ")
@@ -24,7 +24,7 @@ export function extractGameName(path: string): string {
 }
 
 export function deriveEmulatorId(gameId: string): string {
-    // Best effort guess or return empty if unknown
-    // In the future, we could map paths to emulators if we have that info available globally
-    return "";
+  // Default to retroarch for now
+  // TODO: In the future, derive from game path or allow user to select
+  return "retroarch";
 }
