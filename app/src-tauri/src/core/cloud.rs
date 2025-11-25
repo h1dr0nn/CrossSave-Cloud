@@ -19,6 +19,28 @@ use crate::core::packager::SaveMetadata;
 use crate::core::settings::{CloudMode, SettingsManager};
 
 // =============================================================================
+// HELPERS
+// =============================================================================
+
+/// Sanitize game_id to match backend validation: /^[A-Za-z0-9_.-]{1,128}$/
+/// Replaces spaces and other invalid characters with underscores
+fn sanitize_game_id(game_id: &str) -> String {
+    game_id
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '.' || c == '-' {
+                c
+            } else {
+                '_' // Replace invalid chars (including spaces) with underscore
+            }
+        })
+        .collect::<String>()
+        .chars()
+        .take(128) // Limit to 128 chars
+        .collect()
+}
+
+// =============================================================================
 // Configuration
 // =============================================================================
 
@@ -732,6 +754,15 @@ impl CloudBackend for HttpCloudBackend {
         let device_id = self.ensure_device_registered().await?;
         let mut payload = payload;
         payload.device_id = Some(device_id);
+        
+        // Sanitize game_id to match backend validation (no spaces allowed)
+        let original_game_id = payload.game_id.clone();
+        payload.game_id = sanitize_game_id(&payload.game_id);
+        debug!(
+            "{} request_upload_url: original_game_id={}, sanitized_game_id={}",
+            self.log_tag, original_game_id, payload.game_id
+        );
+        
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
@@ -806,12 +837,19 @@ impl CloudBackend for HttpCloudBackend {
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
+        // Sanitize game_id to match backend validation
+        let sanitized_game_id = sanitize_game_id(&game_id);
+        debug!(
+            "{} request_download_url: original_game_id={}, sanitized_game_id={}",
+            self.log_tag, game_id, sanitized_game_id
+        );
+
         let resp = self
             .apply_access_headers(
                 self.client
                     .post(format!("{}/save/download-url", base_url))
                     .header("Authorization", auth)
-                    .json(&serde_json::json!({ "game_id": game_id, "version_id": version_id })),
+                    .json(&serde_json::json!({ "game_id": sanitized_game_id, "version_id": version_id })),
             )
             .send()
             .await
@@ -841,12 +879,21 @@ impl CloudBackend for HttpCloudBackend {
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
+        // Sanitize game_id to match backend validation
+        let sanitized_game_id = sanitize_game_id(&game_id);
+        debug!(
+            "{} list_versions: original_game_id={}, sanitized_game_id={}",
+            self.log_tag, game_id, sanitized_game_id
+        );
+
+        let payload = serde_json::json!({ "game_id": sanitized_game_id.clone() });
+
         let resp = self
             .apply_access_headers(
                 self.client
                     .post(format!("{}/save/list", base_url))
                     .header("Authorization", auth)
-                    .json(&serde_json::json!({ "game_id": game_id.clone() })),
+                    .json(&payload),
             )
             .send()
             .await
@@ -857,9 +904,15 @@ impl CloudBackend for HttpCloudBackend {
         }
 
         if !resp.status().is_success() {
+            let status = resp.status();
+            let error_body = resp.text().await.unwrap_or_else(|_| "unable to read error body".to_string());
+            error!(
+                "{} list_versions failed: status={}, game_id={}, error={}",
+                self.log_tag, status, game_id, error_body
+            );
             return Err(CloudError::NetworkError(format!(
-                "list failed: {}",
-                resp.status()
+                "list failed: {} - {}",
+                status, error_body
             )));
         }
 

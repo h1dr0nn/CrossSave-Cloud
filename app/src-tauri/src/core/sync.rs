@@ -274,11 +274,21 @@ impl UploadQueue {
     }
 
     pub async fn add_job(&self, job: UploadJob) {
-        let mut q = self.queue.lock().await;
-        // Avoid duplicates
-        if !q.iter().any(|j| j.version_id == job.version_id) {
-            q.push_back(job);
-            self.notify.notify_one();
+        let should_notify = {
+            let mut q = self.queue.lock().await;
+            // Avoid duplicates
+            if !q.iter().any(|j| j.version_id == job.version_id) {
+                q.push_back(job.clone());
+                info!("[QUEUE] Added job for game_id={}, queue length={}", job.game_id, q.len());
+                true // Will notify after dropping lock
+            } else {
+                warn!("[QUEUE] Duplicate job detected for version_id={}, skipping", job.version_id);
+                false
+            }
+        }; // Lock dropped here
+        
+        if should_notify {
+            self.notify.notify_one(); // Notify AFTER lock is dropped
             self.emit_status().await;
             self.save_to_disk().await;
         }
@@ -308,8 +318,23 @@ impl UploadQueue {
             let _ = fs::create_dir_all(parent);
         }
         let q = self.queue.lock().await;
-        if let Ok(json) = serde_json::to_string_pretty(&q.clone().into_iter().collect::<Vec<_>>()) {
-            let _ = fs::write(&self.queue_path, json);
+        // Only save pending and uploading jobs, not completed or failed
+        let jobs_to_save: Vec<UploadJob> = q
+            .iter()
+            .filter(|job| {
+                matches!(
+                    job.status,
+                    UploadStatus::Pending | UploadStatus::Uploading
+                )
+            })
+            .cloned()
+            .collect();
+
+        if let Err(e) = std::fs::write(
+            &self.queue_path,
+            serde_json::to_string_pretty(&jobs_to_save).unwrap_or_default(),
+        ) {
+            warn!("[QUEUE] Failed to save queue to disk: {}", e);
         }
     }
 
@@ -353,23 +378,34 @@ impl UploadQueue {
         cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>,
         settings: Arc<SettingsManager>,
     ) {
+        info!("[QUEUE] Queue processor started");
         loop {
+            debug!("[QUEUE] Loop iteration start");
             if !self.online_status.load(Ordering::SeqCst) {
+                debug!("[QUEUE] Waiting for online status...");
                 self.wait_for_online().await;
                 continue;
             }
+            debug!("[QUEUE] Online status OK, proceeding to check queue");
 
             // Wait for a job
             let job = {
                 let mut q = self.queue.lock().await;
+                let queue_len = q.len();
+                debug!("[QUEUE] Acquired queue lock, queue length={}", queue_len);
                 if q.is_empty() {
                     None
                 } else {
-                    q.pop_front()
+                    let job = q.pop_front();
+                    if job.is_some() {
+                        info!("[QUEUE] Popped job from queue, {} jobs remaining", q.len());
+                    }
+                    job
                 }
             };
 
             if let Some(mut job) = job {
+                info!("[QUEUE] Processing upload job for game_id={}", job.game_id);
                 // Set active
                 {
                     let mut active = self.active_job.lock().await;
@@ -422,11 +458,17 @@ impl UploadQueue {
                 }
                 self.emit_status().await;
             } else {
-                // Wait for notification
+                // Queue is empty, wait for notification
+                debug!("[QUEUE] Queue empty, waiting for notification...");
                 tokio::select! {
-                    _ = self.notify.notified() => {},
-                    _ = self.online_notify.notified() => {},
+                    _ = self.notify.notified() => {
+                        debug!("[QUEUE] Woke up from notify signal");
+                    },
+                    _ = self.online_notify.notified() => {
+                        debug!("[QUEUE] Woke up from online signal");
+                    },
                 }
+                debug!("[QUEUE] Notification received, looping back to check queue");
             }
         }
     }
