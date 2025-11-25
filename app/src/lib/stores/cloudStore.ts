@@ -30,8 +30,8 @@ export interface CloudVersion {
 
 export interface CloudDevice {
     device_id: string;
-    name: string;
-    last_sync: number;
+    platform: string;
+    last_seen: number;
 }
 
 export type CloudMode = 'official' | 'self_host' | 'off';
@@ -166,6 +166,12 @@ function bindEvents() {
         listen('cloud://reconnect-started', () => onlineStatus.set('connecting')),
         listen('cloud://online', () => onlineStatus.set('online')),
         listen('cloud://reconnect-required', () => onlineStatus.set('failed')),
+        listen<CloudDevice[]>('cloud://device-updated', (event) => {
+            devices.set(event.payload ?? []);
+        }),
+        listen<string>('cloud://device-error', (event) => {
+            console.error('Device error:', event.payload);
+        }),
         listen<CloudValidationPayload>('cloud://config-valid', (event) => {
             validationResult.set({ status: 'valid', message: event.payload?.message ?? 'Configuration valid' });
         }),
@@ -273,13 +279,19 @@ export const cloudStore = {
 
     async listDevices(): Promise<CloudDevice[]> {
         bindEvents();
-        const result = await invoke<CloudDevice[]>('list_devices');
+        const result = await invoke<CloudDevice[]>('list_cloud_devices');
         devices.set(result);
         return result;
     },
 
+    async registerDevice(deviceId: string, platform: string): Promise<void> {
+        bindEvents();
+        await invoke('register_cloud_device', { device_id: deviceId, platform });
+        await this.listDevices();
+    },
+
     async removeDevice(deviceId: string): Promise<void> {
-        await invoke('remove_device', { device_id: deviceId });
+        await invoke('remove_cloud_device', { device_id: deviceId });
         await this.listDevices();
     },
 

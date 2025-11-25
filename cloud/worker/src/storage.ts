@@ -55,7 +55,6 @@ export async function ensureUserScaffold(bucket: R2Bucket, userId: string): Prom
 
   if (!devicesHead) {
     const devices = {
-      user_id: userId,
       devices: [] as Array<unknown>
     };
     await writeJson(bucket, devicesKey, devices);
