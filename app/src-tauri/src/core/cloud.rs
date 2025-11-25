@@ -26,6 +26,7 @@ pub struct CloudConfig {
     pub device_id: String,
     pub device_name: String,
     pub platform: String,
+    pub user_id: String,
     pub timeout_seconds: u64,
     pub has_registered_device: bool,
 }
@@ -39,6 +40,7 @@ impl Default for CloudConfig {
             device_id: String::new(),
             device_name: String::new(),
             platform: String::new(),
+            user_id: String::new(),
             timeout_seconds: 30,
             has_registered_device: false,
         }
@@ -121,6 +123,7 @@ pub enum CloudError {
 #[async_trait]
 pub trait CloudBackend: Send + Sync {
     async fn login(&self, email: String, password: String) -> Result<String, CloudError>;
+    async fn signup(&self, email: String, password: String) -> Result<String, CloudError>;
     async fn upload_archive(
         &self,
         metadata: SaveMetadata,
@@ -165,6 +168,10 @@ pub struct DisabledCloudBackend;
 #[async_trait]
 impl CloudBackend for DisabledCloudBackend {
     async fn login(&self, _email: String, _password: String) -> Result<String, CloudError> {
+        Err(CloudError::Disabled)
+    }
+
+    async fn signup(&self, _email: String, _password: String) -> Result<String, CloudError> {
         Err(CloudError::Disabled)
     }
 
@@ -245,9 +252,53 @@ pub struct HttpCloudBackend {
 
 pub type SelfHostHttpBackend = HttpCloudBackend;
 
+pub fn ensure_device_identity(
+    settings: &Arc<SettingsManager>,
+) -> Result<(String, String, String), CloudError> {
+    let mut app_settings = settings
+        .get_settings()
+        .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+
+    let mut updated = false;
+    if app_settings.cloud.device_id.trim().is_empty() {
+        app_settings.cloud.device_id = default_device_id();
+        updated = true;
+    }
+
+    if app_settings.cloud.platform.trim().is_empty() {
+        app_settings.cloud.platform = std::env::consts::OS.to_string();
+        updated = true;
+    }
+
+    if app_settings.cloud.device_name.trim().is_empty() {
+        app_settings.cloud.device_name = default_device_name(&app_settings.cloud.platform);
+        updated = true;
+    }
+
+    if updated {
+        settings
+            .update_settings(app_settings.clone())
+            .map_err(|e| CloudError::InvalidConfig(format!("settings save failed: {e}")))?;
+    }
+
+    Ok((
+        app_settings.cloud.device_id,
+        app_settings.cloud.platform,
+        app_settings.cloud.device_name,
+    ))
+}
+
 #[derive(Deserialize)]
 struct LoginResponse {
     token: String,
+    device_id: Option<String>,
+    user_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SignupResponse {
+    token: String,
+    user_id: String,
     device_id: Option<String>,
 }
 
@@ -319,50 +370,75 @@ impl HttpCloudBackend {
     }
 
     fn ensure_local_device_identity(&self) -> Result<(String, String, String), CloudError> {
-        let mut app_settings = self
-            .settings
-            .get_settings()
-            .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
-
-        let mut updated = false;
-        if app_settings.cloud.device_id.trim().is_empty() {
-            app_settings.cloud.device_id = default_device_id();
-            updated = true;
-        }
-
-        if app_settings.cloud.platform.trim().is_empty() {
-            app_settings.cloud.platform = std::env::consts::OS.to_string();
-            updated = true;
-        }
-
-        if app_settings.cloud.device_name.trim().is_empty() {
-            app_settings.cloud.device_name = default_device_name(&app_settings.cloud.platform);
-            updated = true;
-        }
-
-        if updated {
-            self.settings
-                .update_settings(app_settings.clone())
-                .map_err(|e| CloudError::InvalidConfig(format!("settings save failed: {e}")))?;
-        }
-
-        Ok((
-            app_settings.cloud.device_id,
-            app_settings.cloud.platform,
-            app_settings.cloud.device_name,
-        ))
+        ensure_device_identity(&self.settings)
     }
 
     async fn ensure_device_registered(&self) -> Result<String, CloudError> {
         let (device_id, platform, device_name) = self.ensure_local_device_identity()?;
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
+        let mut last_status: Option<reqwest::StatusCode> = None;
+        for attempt in 0..2 {
+            let resp = self
+                .client
+                .post(format!("{}/device/register", base_url))
+                .header("Authorization", auth.clone())
+                .json(&serde_json::json!({
+                    "device_id": device_id,
+                    "platform": platform,
+                    "device_name": device_name,
+                }))
+                .send()
+                .await
+                .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
+            if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+                return Err(CloudError::Unauthorized("invalid token".into()));
+            }
+
+            if resp.status().is_success() {
+                let mut app_settings = self
+                    .settings
+                    .get_settings()
+                    .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
+                if !app_settings.cloud.has_registered_device {
+                    app_settings.cloud.has_registered_device = true;
+                    let _ = self.settings.update_settings(app_settings);
+                }
+
+                return Ok(device_id);
+            }
+
+            last_status = Some(resp.status());
+            error!(
+                "{} device register failed (attempt {}): {}",
+                self.log_tag,
+                attempt + 1,
+                resp.status()
+            );
+        }
+
+        Err(CloudError::NetworkError(format!(
+            "device register failed: {}",
+            last_status
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "unknown status".to_string())
+        )))
+    }
+}
+
+#[async_trait]
+impl CloudBackend for HttpCloudBackend {
+    async fn signup(&self, email: String, password: String) -> Result<String, CloudError> {
+        info!("{} Attempting signup", self.log_tag);
+        let base_url = self.validate_base_url()?;
+        let (device_id, platform, device_name) = self.ensure_local_device_identity()?;
         let resp = self
             .client
-            .post(format!("{}/device/register", base_url))
-            .header("Authorization", auth)
+            .post(format!("{}/signup", base_url))
             .json(&serde_json::json!({
+                "email": email,
+                "password": password,
                 "device_id": device_id,
                 "platform": platform,
                 "device_name": device_name,
@@ -371,33 +447,44 @@ impl HttpCloudBackend {
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
 
-        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(CloudError::Unauthorized("invalid token".into()));
-        }
-
         if !resp.status().is_success() {
-            error!("{} device register failed: {}", self.log_tag, resp.status());
-            return Err(CloudError::NetworkError(format!(
-                "device register failed: {}",
+            warn!(
+                "{} Signup failed with status {}",
+                self.log_tag,
                 resp.status()
+            );
+            return Err(CloudError::Unauthorized(format!(
+                "status {}",
+                resp.status(),
             )));
         }
+
+        let parsed: SignupResponse = resp
+            .json()
+            .await
+            .map_err(|e| CloudError::Serialization(e.to_string()))?;
 
         let mut app_settings = self
             .settings
             .get_settings()
             .map_err(|e| CloudError::InvalidConfig(format!("settings load failed: {e}")))?;
-        if !app_settings.cloud.has_registered_device {
-            app_settings.cloud.has_registered_device = true;
-            let _ = self.settings.update_settings(app_settings);
+        app_settings.cloud.enabled = true;
+        app_settings.cloud.api_key = parsed.token.clone();
+        app_settings.cloud.device_id = parsed.device_id.clone().unwrap_or(device_id);
+        if app_settings.cloud.platform.trim().is_empty() {
+            app_settings.cloud.platform = platform;
         }
+        if app_settings.cloud.device_name.trim().is_empty() {
+            app_settings.cloud.device_name = device_name;
+        }
+        app_settings.cloud.user_id = parsed.user_id.clone();
+        app_settings.cloud.has_registered_device = true;
+        self.settings
+            .update_settings(app_settings)
+            .map_err(|e| CloudError::InvalidConfig(format!("settings save failed: {e}")))?;
 
-        Ok(device_id)
+        Ok(parsed.token)
     }
-}
-
-#[async_trait]
-impl CloudBackend for HttpCloudBackend {
     async fn login(&self, email: String, password: String) -> Result<String, CloudError> {
         info!("{} Attempting login", self.log_tag);
         let base_url = self.validate_base_url()?;
@@ -449,6 +536,9 @@ impl CloudBackend for HttpCloudBackend {
         }
         if app_settings.cloud.device_name.trim().is_empty() {
             app_settings.cloud.device_name = device_name;
+        }
+        if let Some(user_id) = parsed.user_id.clone() {
+            app_settings.cloud.user_id = user_id;
         }
         self.settings
             .update_settings(app_settings)

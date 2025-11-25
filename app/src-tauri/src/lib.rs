@@ -4,8 +4,9 @@ mod core;
 use api::cloud_api::{
     download_cloud_version, get_cloud_config, get_cloud_status, get_upload_url, list_cloud_devices,
     list_cloud_versions, login_cloud, logout_cloud, notify_upload, reconnect_cloud,
-    register_cloud_device, remove_cloud_device, update_cloud_config, update_cloud_mode,
-    upload_cloud_save, validate_official_cloud_settings, validate_self_host_settings,
+    register_cloud_device, remove_cloud_device, signup_cloud, update_cloud_config,
+    update_cloud_mode, upload_cloud_save, validate_official_cloud_settings,
+    validate_self_host_settings,
 };
 use api::explorer_api::{check_path_status, open_folder, scan_save_files};
 use api::history_api::{delete_history_item, get_history_item, list_history, rollback_version};
@@ -191,6 +192,7 @@ pub fn run() {
             validate_self_host_settings,
             get_cloud_status,
             login_cloud,
+            signup_cloud,
             logout_cloud,
             list_cloud_devices,
             register_cloud_device,

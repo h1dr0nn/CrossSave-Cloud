@@ -39,9 +39,23 @@ function normalizeEmail(email: string): string {
 }
 
 function normalizeDeviceName(deviceName: string | undefined): string {
-  if (!deviceName) return "Unknown device";
-  const collapsed = deviceName.trim().replace(/\s+/g, " ");
-  return collapsed.length ? collapsed : "Unknown device";
+  const fallback = "Unknown Device";
+  if (!deviceName) return fallback;
+
+  const cleaned = deviceName
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9 _-]/g, "")
+    .trim();
+
+  return cleaned.length ? cleaned : fallback;
+}
+
+function normalizePlatform(platform: string | undefined): string {
+  if (!platform) return "unknown";
+  const cleaned = platform.trim().toLowerCase();
+  return cleaned.length ? cleaned : "unknown";
 }
 
 function isValidEmail(email: string): boolean {
@@ -96,12 +110,9 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
   const email = normalizeEmail(String(body.email || ""));
   const password = String(body.password || "");
   const deviceId = typeof body.device_id === "string" ? body.device_id.trim() : undefined;
-  const platform = typeof body.platform === "string" ? body.platform.trim() : undefined;
+  const platform = normalizePlatform(typeof body.platform === "string" ? body.platform : undefined);
   const deviceNameInput = typeof body.device_name === "string" ? body.device_name : undefined;
-  const deviceName =
-    deviceNameInput && deviceNameInput.trim().length > 0
-      ? normalizeDeviceName(deviceNameInput)
-      : undefined;
+  const deviceName = normalizeDeviceName(deviceNameInput);
 
   if (!email || !isValidEmail(email)) {
     return errorResponse(400, "invalid_email");
@@ -134,9 +145,9 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
   if (deviceId) {
     devices.devices.push({
       device_id: deviceId,
-      platform: platform || "unknown",
+      platform,
       last_seen: now,
-      device_name: deviceName || "Unknown device",
+      device_name: deviceName,
     });
   }
   await saveUserDevices(env, userId, devices);
@@ -156,12 +167,9 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
   const email = normalizeEmail(String(body.email || ""));
   const password = String(body.password || "");
   const deviceId = typeof body.device_id === "string" ? body.device_id.trim() : undefined;
-  const platform = typeof body.platform === "string" ? body.platform.trim() : undefined;
+  const platform = normalizePlatform(typeof body.platform === "string" ? body.platform : undefined);
   const deviceNameInput = typeof body.device_name === "string" ? body.device_name : undefined;
-  const deviceName =
-    deviceNameInput && deviceNameInput.trim().length > 0
-      ? normalizeDeviceName(deviceNameInput)
-      : undefined;
+  const deviceName = normalizeDeviceName(deviceNameInput);
 
   if (!email || !isValidEmail(email) || !password) {
     return errorResponse(401, "invalid_credentials");
@@ -183,14 +191,14 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
     const existing = devices.devices.find((d) => d.device_id === deviceId);
     if (existing) {
       existing.last_seen = now;
-      if (platform) existing.platform = platform;
-      if (deviceName) existing.device_name = deviceName;
+      existing.platform = platform;
+      existing.device_name = deviceName;
     } else {
       devices.devices.push({
         device_id: deviceId,
-        platform: platform || "unknown",
+        platform,
         last_seen: now,
-        device_name: deviceName || "Unknown device",
+        device_name: deviceName,
       });
     }
     await saveUserDevices(env, user.user_id, devices);
@@ -309,12 +317,9 @@ async function handleRegisterDevice(request: Request, env: Env, auth: AuthContex
   }
 
   const deviceId = typeof body.device_id === "string" ? body.device_id.trim() : "";
-  const platform = typeof body.platform === "string" && body.platform.trim() ? body.platform.trim() : "unknown";
+  const platform = normalizePlatform(typeof body.platform === "string" ? body.platform : undefined);
   const deviceNameInput = typeof body.device_name === "string" ? body.device_name : undefined;
-  const deviceName =
-    deviceNameInput && deviceNameInput.trim().length > 0
-      ? normalizeDeviceName(deviceNameInput)
-      : undefined;
+  const deviceName = normalizeDeviceName(deviceNameInput);
 
   if (!deviceId) {
     return errorResponse(400, "missing_device_id");
@@ -326,9 +331,9 @@ async function handleRegisterDevice(request: Request, env: Env, auth: AuthContex
   if (existing) {
     existing.platform = platform;
     existing.last_seen = now;
-    if (deviceName) existing.device_name = deviceName;
+    existing.device_name = deviceName;
   } else {
-    devices.devices.push({ device_id: deviceId, platform, last_seen: now, device_name: deviceName || "Unknown device" });
+    devices.devices.push({ device_id: deviceId, platform, last_seen: now, device_name: deviceName });
   }
 
   await saveUserDevices(env, auth.user_id, devices);
