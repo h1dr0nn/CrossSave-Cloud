@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use reqwest::{header::CONTENT_TYPE, Client};
+use reqwest::{
+    header::{HeaderMap, HeaderValue, CONTENT_LENGTH, CONTENT_TYPE},
+    Client,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -78,6 +81,8 @@ pub struct UploadRequest {
     pub file_list: Vec<String>,
     pub emulator_id: Option<String>,
     pub device_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker_token: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -85,6 +90,8 @@ pub struct UploadUrlResponse {
     pub upload_url: String,
     pub r2_key: String,
     pub version_id: String,
+    #[serde(default)]
+    pub worker_token: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -276,6 +283,7 @@ pub struct HttpCloudBackend {
     settings: Arc<SettingsManager>,
     mode: CloudMode,
     log_tag: &'static str,
+    access_headers: HeaderMap,
 }
 
 pub type SelfHostHttpBackend = HttpCloudBackend;
@@ -336,6 +344,38 @@ struct ListDevicesResponse {
 }
 
 impl HttpCloudBackend {
+    fn collect_access_headers(mode: CloudMode) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        if mode != CloudMode::Official {
+            return headers;
+        }
+
+        let pairs = [
+            ("CF_ACCESS_CLIENT_ID", "Cf-Access-Client-Id"),
+            ("CF_ACCESS_CLIENT_SECRET", "Cf-Access-Client-Secret"),
+            ("CF_ACCESS_JWT_ASSERTION", "Cf-Access-Jwt-Assertion"),
+        ];
+
+        for (env_key, header_name) in pairs {
+            if let Ok(value) = std::env::var(env_key) {
+                let trimmed = value.trim();
+                if !trimmed.is_empty() {
+                    if let Ok(header_value) = HeaderValue::from_str(trimmed) {
+                        headers.insert(header_name, header_value);
+                    }
+                }
+            }
+        }
+
+        headers
+    }
+
+    fn apply_access_headers(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        self.access_headers
+            .iter()
+            .fold(builder, |acc, (name, value)| acc.header(name, value))
+    }
+
     pub fn new(settings: Arc<SettingsManager>, mode: CloudMode) -> Result<Self, CloudError> {
         let config = settings
             .get_settings()
@@ -347,12 +387,14 @@ impl HttpCloudBackend {
             .map_err(|e| CloudError::InvalidConfig(format!("client build failed: {e}")))?;
 
         let log_tag = log_tag(&mode);
+        let access_headers = Self::collect_access_headers(mode);
 
         Ok(Self {
             client,
             settings,
             mode,
             log_tag,
+            access_headers,
         })
     }
 
@@ -408,14 +450,16 @@ impl HttpCloudBackend {
         let mut last_status: Option<reqwest::StatusCode> = None;
         for attempt in 0..2 {
             let resp = self
-                .client
-                .post(format!("{}/device/register", base_url))
-                .header("Authorization", auth.clone())
-                .json(&serde_json::json!({
-                    "device_id": device_id,
-                    "platform": platform,
-                    "device_name": device_name,
-                }))
+                .apply_access_headers(
+                    self.client
+                        .post(format!("{}/device/register", base_url))
+                        .header("Authorization", auth.clone())
+                        .json(&serde_json::json!({
+                            "device_id": device_id,
+                            "platform": platform,
+                            "device_name": device_name,
+                        })),
+                )
                 .send()
                 .await
                 .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -462,15 +506,17 @@ impl CloudBackend for HttpCloudBackend {
         let base_url = self.validate_base_url()?;
         let (device_id, platform, device_name) = self.ensure_local_device_identity()?;
         let resp = self
-            .client
-            .post(format!("{}/signup", base_url))
-            .json(&serde_json::json!({
-                "email": email,
-                "password": password,
-                "device_id": device_id,
-                "platform": platform,
-                "device_name": device_name,
-            }))
+            .apply_access_headers(
+                self.client
+                    .post(format!("{}/signup", base_url))
+                    .json(&serde_json::json!({
+                        "email": email,
+                        "password": password,
+                        "device_id": device_id,
+                        "platform": platform,
+                        "device_name": device_name,
+                    })),
+            )
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -518,15 +564,17 @@ impl CloudBackend for HttpCloudBackend {
         let base_url = self.validate_base_url()?;
         let (device_id, platform, device_name) = self.ensure_local_device_identity()?;
         let resp = self
-            .client
-            .post(format!("{}/login", base_url))
-            .json(&serde_json::json!({
-                "email": email,
-                "password": password,
-                "device_id": device_id,
-                "platform": platform,
-                "device_name": device_name,
-            }))
+            .apply_access_headers(
+                self.client
+                    .post(format!("{}/login", base_url))
+                    .json(&serde_json::json!({
+                        "email": email,
+                        "password": password,
+                        "device_id": device_id,
+                        "platform": platform,
+                        "device_name": device_name,
+                    })),
+            )
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -601,7 +649,7 @@ impl CloudBackend for HttpCloudBackend {
             .len();
         let hash = calculate_sha256(&archive_path)?;
 
-        let upload_request = UploadRequest {
+        let mut upload_request = UploadRequest {
             game_id: metadata.game_id.clone(),
             version_id: metadata.version_id.clone(),
             size_bytes: archive_size,
@@ -609,15 +657,19 @@ impl CloudBackend for HttpCloudBackend {
             file_list: metadata.file_list.clone(),
             emulator_id: Some(metadata.emulator_id.clone()),
             device_id: Some(device_id.clone()),
+            worker_token: None,
         };
 
         let signed = self.request_upload_url(upload_request.clone()).await?;
+
+        upload_request.worker_token = signed.worker_token.clone();
 
         let archive_file = fs::read(&archive_path).map_err(|e| CloudError::Io(e.to_string()))?;
         let resp = self
             .client
             .put(&signed.upload_url)
             .header(CONTENT_TYPE, "application/zip")
+            .header(CONTENT_LENGTH, archive_size)
             .body(archive_file)
             .send()
             .await
@@ -658,10 +710,12 @@ impl CloudBackend for HttpCloudBackend {
         let auth = self.get_auth_header()?;
 
         let resp = self
-            .client
-            .post(format!("{}/save/upload-url", base_url))
-            .header("Authorization", auth)
-            .json(&payload)
+            .apply_access_headers(
+                self.client
+                    .post(format!("{}/save/upload-url", base_url))
+                    .header("Authorization", auth)
+                    .json(&payload),
+            )
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -693,10 +747,12 @@ impl CloudBackend for HttpCloudBackend {
         let auth = self.get_auth_header()?;
 
         let resp = self
-            .client
-            .post(format!("{}/save/notify-upload", base_url))
-            .header("Authorization", auth)
-            .json(&payload)
+            .apply_access_headers(
+                self.client
+                    .post(format!("{}/save/notify-upload", base_url))
+                    .header("Authorization", auth)
+                    .json(&payload),
+            )
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -725,10 +781,12 @@ impl CloudBackend for HttpCloudBackend {
         let auth = self.get_auth_header()?;
 
         let resp = self
-            .client
-            .post(format!("{}/save/download-url", base_url))
-            .header("Authorization", auth)
-            .json(&serde_json::json!({ "game_id": game_id, "version_id": version_id }))
+            .apply_access_headers(
+                self.client
+                    .post(format!("{}/save/download-url", base_url))
+                    .header("Authorization", auth)
+                    .json(&serde_json::json!({ "game_id": game_id, "version_id": version_id })),
+            )
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -758,10 +816,12 @@ impl CloudBackend for HttpCloudBackend {
         let auth = self.get_auth_header()?;
 
         let resp = self
-            .client
-            .post(format!("{}/save/list", base_url))
-            .header("Authorization", auth)
-            .json(&serde_json::json!({ "game_id": game_id.clone() }))
+            .apply_access_headers(
+                self.client
+                    .post(format!("{}/save/list", base_url))
+                    .header("Authorization", auth)
+                    .json(&serde_json::json!({ "game_id": game_id.clone() })),
+            )
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -920,9 +980,11 @@ impl CloudBackend for HttpCloudBackend {
     async fn list_devices(&self, token: String) -> Result<Vec<CloudDevice>, CloudError> {
         let base_url = self.validate_base_url()?;
         let resp = self
-            .client
-            .get(format!("{}/device/list", base_url))
-            .header("Authorization", format!("Bearer {}", token))
+            .apply_access_headers(
+                self.client
+                    .get(format!("{}/device/list", base_url))
+                    .header("Authorization", format!("Bearer {}", token)),
+            )
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -955,14 +1017,16 @@ impl CloudBackend for HttpCloudBackend {
     ) -> Result<(), CloudError> {
         let base_url = self.validate_base_url()?;
         let resp = self
-            .client
-            .post(format!("{}/device/register", base_url))
-            .header("Authorization", format!("Bearer {}", token))
-            .json(&serde_json::json!({
-                "device_id": device_id.clone(),
-                "platform": platform.clone(),
-                "device_name": device_name.clone(),
-            }))
+            .apply_access_headers(
+                self.client
+                    .post(format!("{}/device/register", base_url))
+                    .header("Authorization", format!("Bearer {}", token))
+                    .json(&serde_json::json!({
+                        "device_id": device_id.clone(),
+                        "platform": platform.clone(),
+                        "device_name": device_name.clone(),
+                    })),
+            )
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;
@@ -1000,10 +1064,12 @@ impl CloudBackend for HttpCloudBackend {
     async fn remove_device(&self, token: String, device_id: String) -> Result<(), CloudError> {
         let base_url = self.validate_base_url()?;
         let resp = self
-            .client
-            .post(format!("{}/device/remove", base_url))
-            .header("Authorization", format!("Bearer {}", token))
-            .json(&serde_json::json!({"device_id": device_id.clone()}))
+            .apply_access_headers(
+                self.client
+                    .post(format!("{}/device/remove", base_url))
+                    .header("Authorization", format!("Bearer {}", token))
+                    .json(&serde_json::json!({"device_id": device_id.clone()})),
+            )
             .send()
             .await
             .map_err(|e| CloudError::NetworkError(e.to_string()))?;

@@ -7,6 +7,8 @@ export interface AuthContext {
 
 interface EnvWithSecret {
   JWT_SECRET?: string;
+  JWT_SECRET_MAIN?: string;
+  JWT_SECRET_ROTATED?: string;
 }
 
 export async function parseAuth(env: EnvWithSecret, request: Request): Promise<AuthContext | null> {

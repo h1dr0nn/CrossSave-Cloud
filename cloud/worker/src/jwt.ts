@@ -2,17 +2,21 @@ import { base64UrlEncode, base64UrlToUint8, utf8ToUint8 } from "./utils";
 
 interface EnvWithSecret {
   JWT_SECRET?: string;
+  JWT_SECRET_MAIN?: string;
+  JWT_SECRET_ROTATED?: string;
 }
 
 type JwtPayload = { user_id: string; device_id?: string; exp: number };
 
 type JwtHeader = { alg: "HS256"; typ: "JWT" };
 
-function getSecret(env: EnvWithSecret): string {
-  if (!env.JWT_SECRET || env.JWT_SECRET.trim().length === 0) {
-    throw new Error("JWT_SECRET is not configured");
+function getSecrets(env: EnvWithSecret): { main: string; rotated?: string } {
+  const main = (env.JWT_SECRET_MAIN || env.JWT_SECRET || "").trim();
+  const rotated = env.JWT_SECRET_ROTATED?.trim();
+  if (!main) {
+    throw new Error("JWT secret is not configured");
   }
-  return env.JWT_SECRET;
+  return { main, rotated: rotated && rotated.length > 0 ? rotated : undefined };
 }
 
 async function hmacSha256(key: CryptoKey, data: Uint8Array): Promise<Uint8Array> {
@@ -34,7 +38,7 @@ export async function signJwt(env: EnvWithSecret, payload: JwtPayload): Promise<
   const header: JwtHeader = { alg: "HS256", typ: "JWT" };
   const encodedHeader = base64UrlEncode(JSON.stringify(header));
   const encodedPayload = base64UrlEncode(JSON.stringify(payload));
-  const secret = getSecret(env);
+  const { main: secret } = getSecrets(env);
 
   const key = await createHmacKey(secret);
   const signingInput = utf8ToUint8(`${encodedHeader}.${encodedPayload}`);
@@ -44,9 +48,17 @@ export async function signJwt(env: EnvWithSecret, payload: JwtPayload): Promise<
   return `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
 }
 
+async function verifyWithSecret(secret: string, encodedHeader: string, encodedPayload: string, encodedSignature: string) {
+  const key = await createHmacKey(secret);
+  const signingInput = utf8ToUint8(`${encodedHeader}.${encodedPayload}`);
+  const signatureBytes = base64UrlToUint8(encodedSignature);
+  const valid = await crypto.subtle.verify("HMAC", key, signatureBytes, signingInput);
+  return valid;
+}
+
 export async function verifyJwt(env: EnvWithSecret, token: string): Promise<JwtPayload | null> {
   try {
-    const secret = getSecret(env);
+    const { main, rotated } = getSecrets(env);
     const parts = token.split(".");
     if (parts.length !== 3) {
       return null;
@@ -64,11 +76,12 @@ export async function verifyJwt(env: EnvWithSecret, token: string): Promise<JwtP
       return null;
     }
 
-    const key = await createHmacKey(secret);
-    const signingInput = utf8ToUint8(`${encodedHeader}.${encodedPayload}`);
-    const signatureBytes = base64UrlToUint8(encodedSignature);
-    const valid = await crypto.subtle.verify("HMAC", key, signatureBytes, signingInput);
-    if (!valid) {
+    const mainValid = await verifyWithSecret(main, encodedHeader, encodedPayload, encodedSignature);
+    const rotatedValid = !mainValid && rotated
+      ? await verifyWithSecret(rotated, encodedHeader, encodedPayload, encodedSignature)
+      : mainValid;
+
+    if (!mainValid && !rotatedValid) {
       return null;
     }
 
