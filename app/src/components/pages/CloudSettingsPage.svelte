@@ -54,6 +54,11 @@
   $: connectionStatus =
     ($onlineStatusStore as "online" | "offline") ?? connectionStatus;
 
+  // Sync activeMode with store when it changes (e.g., when navigating back to this page)
+  $: if ($modeStore && !saving) {
+    activeMode = $modeStore;
+  }
+
   // Only update from store if we are not in a specific manual state or if the store update is relevant
   // For this specific request, we are controlling the UI state manually based on actions.
   // However, we still want to reflect real connection changes if we are "online" or "ready".
@@ -153,18 +158,15 @@
       // Initialize activeMode only once on mount
       activeMode = (config.mode as CloudMode) ?? activeMode;
 
-      // Initialize status based on mode
+      // Initialize status based on mode and actual connection state
       if (activeMode === "off") {
         onlineStatus = "offline";
       } else if (activeMode === "official") {
-        // Check if valid
-        if (config.mode === "official") {
-          onlineStatus = "online"; // Assume online if loaded as official
-        } else {
-          onlineStatus = "offline";
-        }
+        // Use actual connection status from store instead of assuming
+        onlineStatus = $onlineStatusStore === "online" ? "online" : "offline";
       } else if (activeMode === "self_host") {
-        onlineStatus = "ready"; // Assume ready if loaded as self-host
+        // Use actual connection status from store
+        onlineStatus = $onlineStatusStore === "online" ? "ready" : "offline";
       }
     } catch (error) {
       console.error("Failed to initialize cloud settings:", error);

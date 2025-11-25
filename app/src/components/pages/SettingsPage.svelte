@@ -1,7 +1,13 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import AppHeader from "../layout/AppHeader.svelte";
-  import { userEmail, isLoggedIn } from "$lib/stores/cloudStore";
+  import { userEmail, isLoggedIn, cloudStore } from "$lib/stores/cloudStore";
+
+  onMount(async () => {
+    // Initialize cloud store to restore login state
+    await cloudStore.initialize();
+  });
 
   function goBack() {
     goto("/", { keepFocus: true, noScroll: true });

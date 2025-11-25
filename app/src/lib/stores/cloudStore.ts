@@ -293,7 +293,9 @@ export const cloudStore = {
             if (config?.mode) {
                 cloudMode.set(config.mode);
             }
-            if (config?.enabled && config?.api_key) {
+            // Restore login state if user has a token (api_key)
+            // Don't check 'enabled' flag - if they have a token, they're logged in
+            if (config?.api_key) {
                 authState.set({
                     isLoggedIn: true,
                     email: loadPersistedEmail(),
@@ -301,6 +303,17 @@ export const cloudStore = {
                     deviceId: config.device_id ?? null,
                     userId: config.user_id ?? null
                 });
+
+                // Check connection status if logged in and mode is not off
+                if (config.mode && config.mode !== 'off') {
+                    try {
+                        await invoke('get_cloud_status');
+                        // Status will be emitted via sync://online or sync://offline events
+                    } catch (error) {
+                        // Ignore errors, status events will handle it
+                        console.debug('Cloud status check failed:', error);
+                    }
+                }
             }
         } catch (error) {
             console.error('Failed to hydrate cloud auth state', error);
