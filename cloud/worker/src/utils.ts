@@ -11,17 +11,6 @@ export function errorResponse(status: number, message: string): Response {
   return jsonResponse({ error: message }, { status });
 }
 
-export async function parseAuthOrUserId(request: Request): Promise<string | null> {
-  const headerUserId = request.headers.get("x-user-id");
-  if (headerUserId && headerUserId.trim().length > 0) {
-    return headerUserId.trim();
-  }
-
-  // TODO: Replace with real authentication and JWT validation once available.
-  // For now, fallback to a deterministic dummy user for local development.
-  return "local-dev-user";
-}
-
 export async function computeSha256(input: ArrayBuffer | Uint8Array | string): Promise<string> {
   let data: ArrayBuffer;
   if (typeof input === "string") {
