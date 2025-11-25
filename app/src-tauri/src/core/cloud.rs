@@ -800,6 +800,15 @@ impl CloudBackend for HttpCloudBackend {
         let device_id = self.ensure_device_registered().await?;
         let mut payload = payload;
         payload.device_id = Some(device_id);
+        
+        // Sanitize game_id to match backend validation
+        let original_game_id = payload.game_id.clone();
+        payload.game_id = sanitize_game_id(&payload.game_id);
+        debug!(
+            "{} notify_upload: original_game_id={}, sanitized_game_id={}",
+            self.log_tag, original_game_id, payload.game_id
+        );
+
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
