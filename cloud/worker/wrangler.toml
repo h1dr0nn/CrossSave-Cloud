@@ -1,0 +1,12 @@
+name = "crosssave-official-cloud"
+main = "src/worker.ts"
+compatibility_date = "2024-10-01"
+
+# TODO: Set the actual account_id and routes when deploying.
+# account_id = "" # provided via environment configuration
+# routes = []
+
+[[r2_buckets]]
+# TODO: Align bucket_name with the provisioned R2 bucket.
+binding = "CROSSSAVE_R2"
+bucket_name = "crosssave-r2"
