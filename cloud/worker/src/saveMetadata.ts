@@ -6,6 +6,7 @@ export interface VersionMetadataEntry {
   size_bytes: number;
   sha256: string;
   file_list: string[];
+  emulator_id?: string;
   device_id?: string;
   timestamp: number;
 }
@@ -66,6 +67,23 @@ export async function generatePresignedPut(
     key: objectKey,
     expires: expiresSeconds,
     contentType: "application/zip",
+  } as any);
+
+  return { url: presigned.url.toString(), key: objectKey };
+}
+
+export async function generatePresignedGet(
+  bucket: R2Bucket,
+  userId: string,
+  gameId: string,
+  versionId: string,
+  expiresSeconds: number,
+): Promise<{ url: string; key: string }> {
+  const objectKey = getSaveObjectKey(userId, gameId, versionId);
+  const presigned = await bucket.createPresignedUrl({
+    method: "GET",
+    key: objectKey,
+    expires: expiresSeconds,
   } as any);
 
   return { url: presigned.url.toString(), key: objectKey };

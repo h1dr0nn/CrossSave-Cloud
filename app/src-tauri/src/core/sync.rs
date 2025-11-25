@@ -3,25 +3,28 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, RwLock,
 };
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use futures::StreamExt;
 use reqwest::{header::CONTENT_TYPE, Client};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Notify};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
 use crate::core::cloud::{
-    ensure_device_identity, log_tag, CloudBackend, CloudVersionSummary, UploadRequest,
-    UploadUrlResponse,
+    ensure_device_identity, log_tag, CloudBackend, CloudVersionSummary, DownloadUrlResponse,
+    UploadRequest, UploadUrlResponse,
 };
 use crate::core::history::{HistoryEntry, HistoryManager};
 use crate::core::packager::SaveMetadata;
+use crate::core::profile::ProfileManager;
 use crate::core::settings::{CloudMode, SettingsManager};
 use zip::ZipArchive;
 
@@ -164,18 +167,19 @@ async fn ensure_registered_device_for_sync(
 #[derive(Clone, Debug, Serialize)]
 struct DownloadProgressPayload {
     version_id: String,
-    progress: u8,
+    received_bytes: u64,
+    total_bytes: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
 struct DownloadCompletePayload {
     version_id: String,
-    path: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 struct DownloadErrorPayload {
     version_id: String,
+    stage: String,
     message: String,
 }
 
@@ -669,6 +673,7 @@ pub struct SyncManager {
     pub queue: Arc<UploadQueue>,
     pub cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>,
     pub history: Arc<HistoryManager>,
+    pub profiles: Arc<RwLock<ProfileManager>>,
     pub settings: Arc<SettingsManager>,
     online: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
@@ -682,6 +687,7 @@ impl SyncManager {
         app_handle: AppHandle,
         cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>,
         history: Arc<HistoryManager>,
+        profiles: Arc<RwLock<ProfileManager>>,
         settings: Arc<SettingsManager>,
     ) -> Self {
         let online = Arc::new(AtomicBool::new(true));
@@ -692,6 +698,7 @@ impl SyncManager {
             queue,
             cloud,
             history,
+            profiles,
             settings,
             online,
             paused,
@@ -743,6 +750,7 @@ impl SyncManager {
         let queue_clone = self.queue.clone();
         let cloud_clone = self.cloud.clone();
         let history_clone = self.history.clone();
+        let profiles_clone = self.profiles.clone();
         let settings_clone = self.settings.clone();
         let app_handle_clone = self.app_handle.clone();
         let sync_trigger = self.sync_trigger.clone();
@@ -849,6 +857,7 @@ impl SyncManager {
                             if let Err(err) = perform_download(
                                 cloud_clone.clone(),
                                 history_clone.clone(),
+                                profiles_clone.clone(),
                                 app_handle_clone.clone(),
                                 settings_clone.clone(),
                                 game_id.clone(),
@@ -910,6 +919,7 @@ impl Clone for SyncManager {
             queue: self.queue.clone(),
             cloud: self.cloud.clone(),
             history: self.history.clone(),
+            profiles: self.profiles.clone(),
             settings: self.settings.clone(),
             online: self.online.clone(),
             paused: self.paused.clone(),
@@ -937,9 +947,10 @@ impl SyncManager {
     }
 }
 
-async fn perform_download(
+pub async fn perform_download(
     cloud: Arc<Mutex<Box<dyn CloudBackend + Send>>>,
     history: Arc<HistoryManager>,
+    profiles: Arc<RwLock<ProfileManager>>,
     app_handle: AppHandle,
     settings: Arc<SettingsManager>,
     game_id: String,
@@ -951,119 +962,189 @@ async fn perform_download(
         .map_err(|e| format!("path error: {e}"))?
         .join("data")
         .join("cloud_downloads");
+    if let Some(parent) = downloads_dir.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::create_dir_all(&downloads_dir)
+        .map_err(|e| format!("Failed to prepare downloads dir: {e}"))?;
+
     let target_path = downloads_dir.join(format!("{}_{}.zip", game_id, version_id));
 
-    let start_progress = DownloadProgressPayload {
-        version_id: version_id.clone(),
-        progress: 0,
+    let emit_error = |stage: &str, message: String, app: &AppHandle| {
+        let _ = app.emit(
+            "sync://download-error",
+            DownloadErrorPayload {
+                version_id: version_id.clone(),
+                stage: stage.to_string(),
+                message: message.clone(),
+            },
+        );
+        message
     };
-    let _ = app_handle.emit("sync://download-progress", start_progress);
 
-    let result: Result<(), String> = async {
+    let download_info: DownloadUrlResponse = {
         ensure_registered_device_for_sync(&cloud, &settings, &app_handle)
             .await
-            .map_err(|e| {
-                let _ = app_handle.emit("sync://device-error", e.clone());
-                e
-            })?;
-        let summary = {
-            let backend = cloud.lock().await;
-            let versions = backend
-                .list_versions(game_id.clone(), None)
-                .await
-                .map_err(|e| e.to_string())?;
-            versions
-                .into_iter()
-                .find(|v| v.version_id == version_id)
-                .ok_or_else(|| "version not found in cloud".to_string())?
-        };
+            .map_err(|e| emit_error("request-url", e, &app_handle))?;
 
-        {
-            let backend = cloud.lock().await;
-            backend
-                .download_version(game_id.clone(), version_id.clone(), target_path.clone())
-                .await
-                .map_err(|e| e.to_string())?;
-        }
+        let backend = cloud.lock().await;
+        backend
+            .request_download_url(game_id.clone(), version_id.clone())
+            .await
+            .map_err(|e| emit_error("request-url", e.to_string(), &app_handle))?
+    };
 
-        let mid_progress = DownloadProgressPayload {
+    let total_bytes = download_info.size_bytes;
+    let mut received_bytes: u64 = 0;
+    let _ = app_handle.emit(
+        "sync://download-progress",
+        DownloadProgressPayload {
             version_id: version_id.clone(),
-            progress: 50,
+            received_bytes,
+            total_bytes,
+        },
+    );
+
+    let client = Client::new();
+    let mut response = client
+        .get(&download_info.download_url)
+        .send()
+        .await
+        .map_err(|e| emit_error("http-get", e.to_string(), &app_handle))?;
+
+    if !response.status().is_success() {
+        return Err(emit_error(
+            "http-get",
+            format!("download failed: {}", response.status()),
+            &app_handle,
+        ));
+    }
+
+    let mut file = tokio::fs::File::create(&target_path)
+        .await
+        .map_err(|e| emit_error("write-file", e.to_string(), &app_handle))?;
+
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| emit_error("http-get", e.to_string(), &app_handle))?;
+        received_bytes += chunk.len() as u64;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| emit_error("write-file", e.to_string(), &app_handle))?;
+
+        let _ = app_handle.emit(
+            "sync://download-progress",
+            DownloadProgressPayload {
+                version_id: version_id.clone(),
+                received_bytes,
+                total_bytes,
+            },
+        );
+    }
+
+    file.flush()
+        .await
+        .map_err(|e| emit_error("write-file", e.to_string(), &app_handle))?;
+
+    let emulator_id = download_info.emulator_id.clone().unwrap_or_default();
+    if emulator_id.trim().is_empty() {
+        return Err(emit_error(
+            "unzip",
+            "emulator_id missing in download metadata".to_string(),
+            &app_handle,
+        ));
+    }
+
+    let profile = {
+        let guard = profiles
+            .read()
+            .map_err(|e| emit_error("unzip", format!("profile lock error: {e}"), &app_handle))?;
+        guard
+            .get_profile(&emulator_id)
+            .map_err(|e| emit_error("unzip", e.to_string(), &app_handle))?
+    };
+
+    let Some(profile) = profile else {
+        return Err(emit_error(
+            "unzip",
+            format!("profile not found for {emulator_id}"),
+            &app_handle,
+        ));
+    };
+
+    let Some(save_path) = profile.default_save_paths.first() else {
+        return Err(emit_error(
+            "unzip",
+            format!("no default save path for {emulator_id}"),
+            &app_handle,
+        ));
+    };
+
+    let target_dir = PathBuf::from(save_path);
+    if !target_dir.exists() {
+        return Err(emit_error(
+            "unzip",
+            format!("save directory missing: {}", target_dir.display()),
+            &app_handle,
+        ));
+    }
+
+    let file = fs::File::open(&target_path)
+        .map_err(|e| emit_error("unzip", e.to_string(), &app_handle))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|e| emit_error("unzip", e.to_string(), &app_handle))?;
+
+    for i in 0..archive.len() {
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| emit_error("unzip", e.to_string(), &app_handle))?;
+        let Some(name) = file.enclosed_name().map(|p| p.to_owned()) else {
+            continue;
         };
-        let _ = app_handle.emit("sync://download-progress", mid_progress);
 
-        // Extract archive
-        if let Some(parent) = downloads_dir.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-
-        let extract_dir = history.base_dir.join(&game_id).join("downloaded");
-        let file = fs::File::open(&target_path).map_err(|e| e.to_string())?;
-        let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
-        if extract_dir.exists() {
-            let _ = fs::remove_dir_all(&extract_dir);
-        }
-        fs::create_dir_all(&extract_dir).map_err(|e| e.to_string())?;
-        for i in 0..archive.len() {
-            let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
-            let out_path = extract_dir.join(file.name());
-            if file.is_dir() {
-                fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
-            } else {
-                if let Some(parent) = out_path.parent() {
-                    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                }
-                let mut outfile = fs::File::create(&out_path).map_err(|e| e.to_string())?;
-                std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+        let out_path = target_dir.join(name);
+        if file.is_dir() {
+            fs::create_dir_all(&out_path)
+                .map_err(|e| emit_error("unzip", e.to_string(), &app_handle))?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| emit_error("unzip", e.to_string(), &app_handle))?;
             }
-        }
-
-        let metadata = SaveMetadata {
-            game_id: summary.game_id.clone(),
-            emulator_id: summary.emulator_id.clone(),
-            timestamp: summary.timestamp,
-            version_id: summary.version_id.clone(),
-            file_list: summary.file_list.clone(),
-            hash: summary.hash.clone(),
-        };
-
-        history
-            .save_to_history(metadata, target_path.clone())
-            .map_err(|e| e.to_string())?;
-
-        Ok(())
-    }
-    .await;
-
-    match result {
-        Ok(_) => {
-            let _ = app_handle.emit(
-                "sync://download-progress",
-                DownloadProgressPayload {
-                    version_id: version_id.clone(),
-                    progress: 100,
-                },
-            );
-            let _ = app_handle.emit(
-                "sync://download-complete",
-                DownloadCompletePayload {
-                    version_id: version_id.clone(),
-                    path: target_path.to_string_lossy().to_string(),
-                },
-            );
-            Ok(())
-        }
-        Err(err) => {
-            let _ = app_handle.emit(
-                "sync://download-error",
-                DownloadErrorPayload {
-                    version_id: version_id.clone(),
-                    message: err.clone(),
-                },
-            );
-            Err(err)
+            let mut outfile = fs::File::create(&out_path)
+                .map_err(|e| emit_error("unzip", e.to_string(), &app_handle))?;
+            std::io::copy(&mut file, &mut outfile)
+                .map_err(|e| emit_error("unzip", e.to_string(), &app_handle))?;
         }
     }
+
+    let timestamp = download_info
+        .timestamp
+        .unwrap_or_else(|| Utc::now().timestamp().max(0) as u64);
+    let metadata = SaveMetadata {
+        game_id: download_info.game_id.clone(),
+        emulator_id: emulator_id.clone(),
+        timestamp,
+        version_id: download_info.version_id.clone(),
+        file_list: download_info.file_list.clone(),
+        hash: download_info.sha256.clone(),
+        size_bytes: Some(download_info.size_bytes),
+        sha256: Some(download_info.sha256.clone()),
+        source: Some("cloud".to_string()),
+    };
+
+    history
+        .add_version_from_cloud(metadata, target_path.clone())
+        .map_err(|e| emit_error("write-history", e.to_string(), &app_handle))?;
+
+    let _ = app_handle.emit(
+        "sync://download-complete",
+        DownloadCompletePayload {
+            version_id: version_id.clone(),
+        },
+    );
+
+    Ok(())
 }
 
 fn calculate_sha256(path: &PathBuf) -> Result<String, std::io::Error> {

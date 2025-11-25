@@ -38,6 +38,12 @@ pub struct SaveMetadata {
     pub version_id: String,
     pub file_list: Vec<String>,
     pub hash: String,
+    #[serde(default)]
+    pub size_bytes: Option<u64>,
+    #[serde(default)]
+    pub sha256: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -176,6 +182,9 @@ impl SavePackager {
 
         let file_list = self.file_names_for_metadata(&files);
         let archive_hash = self.calculate_archive_hash(&archive_path)?;
+        let archive_size = fs::metadata(&archive_path)
+            .map(|metadata| metadata.len())
+            .unwrap_or_default();
 
         info!("[PACKAGER] Archive hash: {archive_hash}");
 
@@ -186,6 +195,9 @@ impl SavePackager {
             version_id,
             file_list,
             hash: archive_hash,
+            size_bytes: Some(archive_size),
+            sha256: Some(archive_hash.clone()),
+            source: Some("local".to_string()),
         };
 
         info!("[PACKAGER] Final metadata: {:?}", metadata);
