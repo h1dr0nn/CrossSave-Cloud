@@ -40,6 +40,13 @@ pub enum SyncDecision {
     Noop,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ConnectionStatus {
+    pub connected: bool,
+    pub last_success: Option<u64>, // timestamp in seconds
+    pub last_error: Option<String>,
+}
+
 /// Determines the sync action based on local and cloud state.
 ///
 /// Rules:
@@ -679,6 +686,7 @@ pub struct SyncManager {
     pub settings: Arc<SettingsManager>,
     online: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
+    connection_status: Arc<RwLock<ConnectionStatus>>,
     app_handle: AppHandle,
     sync_trigger: Arc<Notify>,
     running: Arc<AtomicBool>,
@@ -695,6 +703,11 @@ impl SyncManager {
         let online = Arc::new(AtomicBool::new(true));
         let paused = Arc::new(AtomicBool::new(false));
         let queue = Arc::new(UploadQueue::new(app_handle.clone(), online.clone()));
+        let connection_status = Arc::new(RwLock::new(ConnectionStatus {
+            connected: false,
+            last_success: None,
+            last_error: None,
+        }));
 
         Self {
             queue,
@@ -704,6 +717,7 @@ impl SyncManager {
             settings,
             online,
             paused,
+            connection_status,
             app_handle,
             sync_trigger: Arc::new(Notify::new()),
             running: Arc::new(AtomicBool::new(false)),
@@ -715,8 +729,10 @@ impl SyncManager {
     }
 
     pub fn start_background_task(&self) {
+        info!("[SYNC] start_background_task() called - initializing background tasks");
         let queue = self.queue.clone();
         let cloud = self.cloud.clone();
+        let cloud_for_monitor = self.cloud.clone(); // Clone for monitoring loop
         let settings_for_ping = self.settings.clone();
         let app_for_ping = self.app_handle.clone();
         let online_flag = self.online.clone();
@@ -730,21 +746,51 @@ impl SyncManager {
             queue.process_queue(cloud, settings_for_queue).await;
         });
 
-        // Connectivity monitor
+        // Enhanced connectivity monitor with connection status tracking
+        let connection_status_clone = self.connection_status.clone();
         tokio::spawn(async move {
+            info!("[SYNC] Connection monitoring loop started");
             loop {
-                let online = check_online(&settings_for_ping).await;
-                let previous = online_flag.swap(online, Ordering::SeqCst);
+                // Check connection using backend's check_connection method
+                debug!("[SYNC] Checking connection...");
+                let backend = cloud_for_monitor.lock().await;
+                let connected = backend.check_connection().await.unwrap_or(false);
+                drop(backend);
+                
+                info!("[SYNC] Connection status: {}", if connected { "ONLINE" } else { "OFFLINE" });
+                
+                let previous = online_flag.swap(connected, Ordering::SeqCst);
+                
+                // Update connection status
+                if let Ok(mut status) = connection_status_clone.write() {
+                    status.connected = connected;
+                    if connected {
+                        status.last_success = Some(
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs()
+                        );
+                        status.last_error = None;
+                    }
+                    
+                    // Emit connection status event to frontend
+                    let _ = app_for_ping.emit("connection-status", status.clone());
+                    debug!("[SYNC] Emitted connection-status event: connected={}", status.connected);
+                }
 
-                if online && !previous {
+                // Handle state transitions
+                if connected && !previous {
+                    info!("[SYNC] Connection restored - triggering sync");
                     let _ = app_for_ping.emit("sync://online", "online");
                     queue_for_online.signal_online();
                     trigger_for_online.notify_one();
-                } else if !online && previous {
+                } else if !connected && previous {
+                    warn!("[SYNC] Connection lost");
                     let _ = app_for_ping.emit("sync://offline", "offline");
                 }
 
-                sleep(Duration::from_secs(15)).await;
+                sleep(Duration::from_secs(30)).await; // Check every 30 seconds
             }
         });
 
@@ -775,15 +821,16 @@ impl SyncManager {
                     }
                 }
 
-                // Check if sync is enabled
-                let (enabled, mode) = settings_clone
+                // Check if cloud mode is enabled (not Off)
+                let mode = settings_clone
                     .get_settings()
-                    .map(|s| (s.cloud.enabled, s.cloud_mode))
-                    .unwrap_or((false, crate::core::settings::CloudMode::Off));
+                    .map(|s| s.cloud_mode)
+                    .unwrap_or(crate::core::settings::CloudMode::Off);
 
                 let tag = log_tag(&mode);
 
-                if !enabled {
+                // Skip sync if cloud mode is Off
+                if mode == crate::core::settings::CloudMode::Off {
                     continue;
                 }
 
@@ -936,6 +983,7 @@ impl Clone for SyncManager {
             settings: self.settings.clone(),
             online: self.online.clone(),
             paused: self.paused.clone(),
+            connection_status: self.connection_status.clone(),
             app_handle: self.app_handle.clone(),
             sync_trigger: self.sync_trigger.clone(),
             running: self.running.clone(),

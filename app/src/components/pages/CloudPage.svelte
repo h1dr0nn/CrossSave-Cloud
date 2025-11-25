@@ -8,6 +8,7 @@
     isLoggedIn,
     userEmail,
     isSyncing,
+    connectionStatusStore,
   } from "$lib/stores/cloudStore";
   import type {
     CloudDevice,
@@ -373,6 +374,27 @@
           sticky={false}
         />
       </div>
+
+      <!-- Connection Status Banner -->
+      <!-- Only show if we've checked connection and it's offline -->
+      {#if $connectionStatusStore.last_success !== undefined && !$connectionStatusStore.connected}
+        <div class="connection-banner offline">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.58 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"
+            ></path>
+          </svg>
+          <span>Offline - Checking connection...</span>
+        </div>
+      {/if}
 
       <div class="settings-container">
         {#if !$isLoggedIn}
@@ -1386,6 +1408,39 @@
     background: var(--bg-secondary);
     border-radius: 8px;
     border: 1px dashed var(--border);
+  }
+
+  .connection-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .connection-banner.offline {
+    background: color-mix(in srgb, var(--warning) 10%, transparent);
+    color: var(--warning);
+    border: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
+  }
+
+  .connection-banner svg {
+    flex-shrink: 0;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @media (max-width: 640px) {

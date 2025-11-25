@@ -129,9 +129,8 @@ impl SavePackager {
             .clone()
             .ok_or_else(|| PackagerError::InvalidInput("version_id not set".into()))?;
 
-        let archives_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("data")
-            .join("archives");
+        // Use system temp directory to avoid triggering file watcher
+        let archives_dir = std::env::temp_dir().join("crosssave_archives");
 
         fs::create_dir_all(&archives_dir).map_err(|err| PackagerError::Io(err.to_string()))?;
 

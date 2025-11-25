@@ -9,6 +9,7 @@ import {
 } from "../api";
 import { pushError, pushInfo } from "../notifications";
 import { formatErrorMessage } from "../errorMessages";
+import { settingsStore } from "../settingsStore";
 
 interface WatcherEvent {
   timestamp: Date;
@@ -44,21 +45,26 @@ export function createGameDetailLogic(gameId: string) {
       return;
     }
 
+    console.log(`[GameDetail] loadHistory started for: ${gameId}`);
     try {
       if (get(loading)) {
         history.set([]);
       }
       reloading.set(true);
+      console.log("[GameDetail] reloading set to TRUE, starting 1s delay");
       const minTime = new Promise((resolve) => setTimeout(resolve, 1000));
       const [entries] = await Promise.all([listHistory(gameId), minTime]);
+      console.log(`[GameDetail] loadHistory completed, found ${entries.length} entries`);
       history.set(
         [...entries].sort((a, b) => b.metadata.timestamp - a.metadata.timestamp)
       );
     } catch (error) {
+      console.error("[GameDetail] loadHistory error:", error);
       pushError(formatErrorMessage(error));
     } finally {
       loading.set(false);
       reloading.set(false);
+      console.log("[GameDetail] reloading set to FALSE");
     }
   }
 
@@ -77,19 +83,29 @@ export function createGameDetailLogic(gameId: string) {
     }
   }
 
-  async function packageNow(emulatorId: string) {
+  async function packageNow(emulatorId: string, gameName?: string) {
     if (!emulatorId) {
       pushError("Missing emulator id for packaging");
+      console.error("[PACKAGE] Missing emulatorId");
       return;
     }
 
+    const actualGameId = gameName || gameId;
+    console.log(`[PACKAGE] Starting package for game: ${actualGameId}, emulator: ${emulatorId}`);
     packaging.set(true);
     try {
-      await packageGame(emulatorId, gameId);
+      await packageGame(emulatorId, actualGameId);
       pushInfo("Packaging completed");
+      console.log("[PACKAGE] Packaging completed successfully");
       await loadHistory();
       changesDetected.set(false);
+
+      // Refresh storage info for Settings/Storage page
+      settingsStore.refreshStorage().catch(err =>
+        console.warn("[PACKAGE] Failed to refresh storage info:", err)
+      );
     } catch (error) {
+      console.error("[PACKAGE] Packaging failed:", error);
       pushError(formatErrorMessage(error));
     } finally {
       packaging.set(false);

@@ -1117,3 +1117,94 @@ fn mode_to_str(mode: &CloudMode) -> &'static str {
         CloudMode::Off => "off",
     }
 }
+
+// ============================================================================
+// Conflict Resolution Commands
+// ============================================================================
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ConflictDetails {
+    pub local_timestamp: u64,
+    pub cloud_timestamp: u64,
+}
+
+/// Get details about a conflict for a specific game
+#[tauri::command]
+pub async fn get_conflict_details(
+    game_id: String,
+    history: State<'_, Arc<HistoryManager>>,
+    cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+) -> Result<ConflictDetails, String> {
+    // Get local latest version
+    let local = history
+        .get_latest_version(&game_id)
+        .ok_or_else(|| "No local version found".to_string())?;
+
+    // Get cloud latest version
+    let backend = cloud.lock().await;
+    let cloud_versions = backend
+        .list_versions(game_id.clone(), Some(1))
+        .await
+        .map_err(|e| format!("Failed to list cloud versions: {e}"))?;
+
+    let cloud_latest = cloud_versions
+        .first()
+        .ok_or_else(|| "No cloud version found".to_string())?;
+
+    Ok(ConflictDetails {
+        local_timestamp: local.metadata.timestamp,
+        cloud_timestamp: cloud_latest.timestamp,
+    })
+}
+
+/// Force upload local save to resolve conflict
+#[tauri::command]
+pub async fn resolve_conflict_upload(
+    game_id: String,
+    sync: State<'_, SyncManager>,
+) -> Result<(), String> {
+    info!("[CONFLICT] Resolving by uploading local save for {}", game_id);
+    sync.trigger_sync();
+    Ok(())
+}
+
+/// Force download cloud save to resolve conflict
+#[tauri::command]
+pub async fn resolve_conflict_download(
+    game_id: String,
+    sync: State<'_, SyncManager>,
+    cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    history: State<'_, Arc<HistoryManager>>,
+    profiles: State<'_, Arc<RwLock<ProfileManager>>>,
+    settings: State<'_, Arc<SettingsManager>>,
+    app: AppHandle,
+) -> Result<(), String> {
+    info!("[CONFLICT] Resolving by downloading cloud save for {}", game_id);
+
+    // Get latest cloud version
+    let backend = cloud.lock().await;
+    let cloud_versions = backend
+        .list_versions(game_id.clone(), Some(1))
+        .await
+        .map_err(|e| format!("Failed to list cloud versions: {e}"))?;
+
+    let cloud_latest = cloud_versions
+        .first()
+        .ok_or_else(|| "No cloud version found".to_string())?;
+
+    let version_id = cloud_latest.version_id.clone();
+    drop(backend);
+
+    // Perform download
+    perform_download(
+        cloud.inner().clone(),
+        history.inner().clone(),
+        profiles.inner().clone(),
+        app,
+        settings.inner().clone(),
+        game_id,
+        version_id,
+    )
+    .await
+    .map_err(|e| format!("Download failed: {e}"))
+}

@@ -33,6 +33,12 @@ export interface CloudDevice {
     last_seen: number;
 }
 
+export interface ConnectionStatus {
+    connected: boolean;
+    last_success?: number; // timestamp in seconds
+    last_error?: string;
+}
+
 export type CloudMode = 'official' | 'self_host' | 'off';
 export type CloudAuthMode = 'NONE' | 'ACCESS_KEY' | 'USERPASS';
 
@@ -126,6 +132,11 @@ const downloadState = writable<DownloadState>({
     error: null
 });
 const onlineStatus = writable<'online' | 'offline' | 'connecting' | 'failed'>('offline');
+const connectionStatus = writable<ConnectionStatus>({
+    connected: false,
+    last_success: undefined,
+    last_error: undefined
+});
 const devices = writable<CloudDevice[]>([]);
 const cloudMode = writable<CloudMode>('off');
 const cloudConfig = writable<CloudConfig | null>(null);
@@ -179,6 +190,20 @@ function bindEvents() {
         }),
         listen('sync://online', () => onlineStatus.set('online')),
         listen('sync://offline', () => onlineStatus.set('offline')),
+        listen<ConnectionStatus>('connection-status', (event) => {
+            const status = event.payload;
+            const wasConnected = get(connectionStatus).connected;
+            connectionStatus.set(status);
+
+            // Auto-reload on reconnect
+            if (status.connected && !wasConnected) {
+                console.log('[CloudStore] Connection restored - reloading cloud data');
+                // Trigger reload of cloud data
+                cloudStore.getCloudStatus().catch((err: unknown) =>
+                    console.warn('[CloudStore] Failed to reload on reconnect:', err)
+                );
+            }
+        }),
         listen('cloud://reconnect-started', () => onlineStatus.set('connecting')),
         listen('cloud://online', () => onlineStatus.set('online')),
         listen('cloud://reconnect-required', () => onlineStatus.set('failed')),
@@ -614,3 +639,4 @@ export const isSyncing = derived(syncStatus, ($status) => $status.is_syncing);
 export const isLoggedIn = derived(authState, ($auth) => $auth.isLoggedIn);
 export const userEmail = derived(authState, ($auth) => $auth.email);
 export const online = derived(onlineStatus, ($status) => $status === 'online');
+export const connectionStatusStore = connectionStatus;

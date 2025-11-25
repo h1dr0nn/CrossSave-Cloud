@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use reqwest::{
@@ -11,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::core::packager::SaveMetadata;
@@ -183,6 +184,9 @@ pub trait CloudBackend: Send + Sync {
     ) -> Result<(), CloudError>;
     async fn remove_device(&self, token: String, device_id: String) -> Result<(), CloudError>;
     fn get_device_id(&self) -> Result<String, CloudError>;
+    
+    /// Check if the cloud backend is reachable and healthy
+    async fn check_connection(&self) -> Result<bool, CloudError>;
 }
 
 // =============================================================================
@@ -270,6 +274,10 @@ impl CloudBackend for DisabledCloudBackend {
 
     fn get_device_id(&self) -> Result<String, CloudError> {
         Err(CloudError::Disabled)
+    }
+    
+    async fn check_connection(&self) -> Result<bool, CloudError> {
+        Ok(false) // Disabled backend is never connected
     }
 }
 
@@ -1123,6 +1131,39 @@ impl CloudBackend for HttpCloudBackend {
             return Err(CloudError::NotFound("device_id not registered".into()));
         }
         Ok(config.device_id)
+    }
+    
+    async fn check_connection(&self) -> Result<bool, CloudError> {
+        let base_url = match self.validate_base_url() {
+            Ok(url) => url,
+            Err(_) => {
+                debug!("[CLOUD] check_connection: Invalid base URL");
+                return Ok(false); // Invalid config = not connected
+            }
+        };
+        
+        debug!("[CLOUD] check_connection: Checking {}/api/games", base_url);
+        
+        // Simple HEAD request to check if server is reachable
+        // ANY HTTP response (even 404) means server is online
+        match self.client
+            .head(format!("{}/api/games", base_url))
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                // Any response means server is reachable = online
+                // This includes 404, 401, 500, etc.
+                debug!("[CLOUD] check_connection: Got response status={}, server is ONLINE", resp.status());
+                Ok(true)
+            }
+            Err(e) => {
+                // Only network/timeout errors mean offline
+                debug!("[CLOUD] check_connection: Request failed: {}, server is OFFLINE", e);
+                Ok(false)
+            }
+        }
     }
 }
 
