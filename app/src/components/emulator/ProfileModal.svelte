@@ -95,6 +95,16 @@
     filePatterns = filePatterns.filter((_, i) => i !== index);
   }
 
+  function updatePath(index: number, newValue: string) {
+    defaultSavePaths[index] = newValue;
+    defaultSavePaths = [...defaultSavePaths]; // Trigger reactivity
+  }
+
+  function updatePattern(index: number, newValue: string) {
+    filePatterns[index] = newValue;
+    filePatterns = [...filePatterns]; // Trigger reactivity
+  }
+
   async function browsePath() {
     try {
       const selectedPath = await selectDirectory();
@@ -199,7 +209,13 @@
                 <ul class="item-list">
                   {#each defaultSavePaths as path, i}
                     <li>
-                      <span class="item-text">{path}</span>
+                      <input
+                        type="text"
+                        class="item-input"
+                        value={path}
+                        on:input={(e) => updatePath(i, e.currentTarget.value)}
+                        placeholder="Path..."
+                      />
                       <button class="btn-icon" on:click={() => removePath(i)}
                         >&times;</button
                       >
@@ -229,7 +245,14 @@
                 <ul class="item-list">
                   {#each filePatterns as pattern, i}
                     <li>
-                      <span class="item-text">{pattern}</span>
+                      <input
+                        type="text"
+                        class="item-input"
+                        value={pattern}
+                        on:input={(e) =>
+                          updatePattern(i, e.currentTarget.value)}
+                        placeholder="Pattern..."
+                      />
                       <button class="btn-icon" on:click={() => removePattern(i)}
                         >&times;</button
                       >
@@ -572,5 +595,20 @@
   .btn-secondary:hover {
     background: var(--bg-hover);
     border-color: var(--text-secondary);
+  }
+
+  .item-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: "SF Mono", "Monaco", monospace;
+    font-size: 0.85rem;
+    padding: 0;
+    outline: none;
+  }
+
+  .item-input:focus {
+    color: var(--accent);
   }
 </style>

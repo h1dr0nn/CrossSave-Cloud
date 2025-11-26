@@ -13,6 +13,7 @@ import {
   type StorageInfo
 } from "./api";
 import { pushError, pushInfo } from "./notifications";
+import { profilesStore } from "./stores";
 
 export interface OverrideState {
   enabled: boolean;
@@ -82,6 +83,8 @@ function createSettingsStore() {
         loadingProfiles: false,
         selectedProfileId: state.selectedProfileId ?? profiles[0]?.emulator_id ?? null
       }));
+      // Sync with global profiles store for MainLayout
+      profilesStore.set(profiles);
     } catch (error) {
       update((state) => ({ ...state, loadingProfiles: false }));
       pushError(`Failed to load profiles: ${error}`);

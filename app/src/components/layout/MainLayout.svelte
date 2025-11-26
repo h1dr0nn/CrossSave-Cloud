@@ -37,30 +37,22 @@
   onMount(async () => {
     const startTime = Date.now();
 
-    // Check if we already have profiles in store
+    // Optimistic UI: Use existing profiles immediately if available
     if ($profilesStore.length > 0) {
       loadingProfiles = false;
       if (!$selectedEmulatorIdStore) {
         selectedEmulatorIdStore.set($profilesStore[0].emulator_id);
       }
-      // If we have a selected emulator, ensure its games are loaded (or at least checked)
+      // If we have a selected emulator, ensure its games are loaded
       if ($selectedEmulatorIdStore) {
         loadGames($selectedEmulatorIdStore);
       }
-      return;
     }
 
     try {
-      // Add a timeout to prevent infinite loading
-      const timeoutPromise = new Promise<EmulatorProfile[]>((_, reject) =>
-        setTimeout(() => reject(new Error("Profile load timeout")), 5000)
-      );
-
-      const loadedProfiles = await Promise.race([
-        listProfiles(),
-        timeoutPromise,
-      ]);
-
+      // Always fetch fresh profiles to ensure sync with Settings
+      // This runs in background if we already have data
+      const loadedProfiles = await listProfiles();
       profilesStore.set(loadedProfiles);
 
       if (loadedProfiles.length > 0) {
@@ -75,24 +67,21 @@
           // First launch ever - show popup
           showScanPopup = true;
           localStorage.setItem("hasLaunchedBefore", "true");
-        } else {
-          // Subsequent launches - no auto-scan
-          // scanAll();
         }
       }
     } catch (error) {
       console.error("Failed to load emulator profiles", error);
-      // If timeout or error, ensure we stop loading
     } finally {
-      // Ensure minimum 1s loading time
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, 1000 - elapsed);
+      // Only manage loading state if we didn't have cached data
+      if (loadingProfiles) {
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, 1000 - elapsed);
 
-      if (remaining > 0) {
-        await new Promise((resolve) => setTimeout(resolve, remaining));
+        if (remaining > 0) {
+          await new Promise((resolve) => setTimeout(resolve, remaining));
+        }
+        loadingProfiles = false;
       }
-
-      loadingProfiles = false;
     }
   });
 

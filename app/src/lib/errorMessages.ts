@@ -2,12 +2,12 @@
  * Converts technical error messages to user-friendly messages
  */
 export function formatErrorMessage(error: unknown): string {
-    if (typeof error === 'string') {
-        return cleanErrorMessage(error);
-    }
+    const msg = String(error).toLowerCase();
 
-    if (error instanceof Error) {
-        return cleanErrorMessage(error.message);
+    if (msg.includes("network error")) {
+        // This assumes 'error' has a 'message' property if it's a network error.
+        // A more robust solution might check 'error instanceof Error' first.
+        return cleanErrorMessage((error as any).message || String(error));
     }
 
     return 'An unexpected error occurred. Please try again';
