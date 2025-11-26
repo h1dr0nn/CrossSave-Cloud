@@ -453,7 +453,7 @@ export const cloudStore = {
     async listCloudVersions(gameId: string): Promise<CloudVersion[]> {
         bindEvents();
         const versions = await invoke<CloudVersion[]>('list_cloud_versions', {
-            game_id: gameId
+            gameId: gameId
         });
 
         const normalized = versions.map((version) => ({
@@ -480,8 +480,8 @@ export const cloudStore = {
         });
         try {
             return await invoke<string>('download_cloud_version', {
-                gameId,
-                versionId
+                gameId: gameId,
+                versionId: versionId
             });
         } catch (error: unknown) {
             const message = typeof error === 'string' ? error : (error as Error)?.message ?? 'Download failed';

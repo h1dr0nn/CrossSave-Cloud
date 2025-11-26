@@ -63,10 +63,13 @@
   let hasLoadedAfterLogin = false;
   let lastDownloadError = "";
   let lastDownloadPath = "";
+  let syncRequested = false;
+  let syncRequestTime = 0;
 
   // Cloud versions
   let selectedGame = "";
   let loadingVersions = false;
+  let searchDebounceTimer: number | undefined;
 
   $: syncStatus = $syncStatusStore;
   $: selectedVersions = $cloudVersionsStore.get(selectedGame) ?? [];
@@ -120,6 +123,24 @@
     if (nextMessage !== null) {
       syncMessage = nextMessage;
     }
+  }
+
+  // Detect sync completion (with minimum 1s delay for UX)
+  $: if (
+    syncRequested &&
+    syncStatus &&
+    !$isSyncing &&
+    syncStatus.queue_length === 0
+  ) {
+    const elapsed = Date.now() - syncRequestTime;
+    const minDelay = 1000; // Minimum 1 second
+    const remainingDelay = Math.max(0, minDelay - elapsed);
+
+    setTimeout(() => {
+      syncMessage = "Sync complete";
+      syncRequested = false;
+      setTimeout(() => (syncMessage = ""), 3000);
+    }, remainingDelay);
   }
 
   onMount(async () => {
@@ -288,10 +309,14 @@
   async function handleSyncNow() {
     try {
       syncMessage = "Sync requested...";
+      syncRequested = true;
+      syncRequestTime = Date.now();
       await cloudStore.forceSyncNow();
       await loadSyncStatus();
     } catch (error) {
       syncMessage = "Sync failed: " + error;
+      syncRequested = false;
+      setTimeout(() => (syncMessage = ""), 3000);
     }
   }
 
@@ -329,15 +354,33 @@
   async function loadCloudVersions() {
     if (!selectedGame) return;
 
+    console.log("Loading cloud versions for game ID:", selectedGame);
     loadingVersions = true;
     try {
       await cloudStore.listCloudVersions(selectedGame);
     } catch (error) {
       console.error("Failed to load cloud versions:", error);
-      pushError("Failed to load cloud versions");
+      pushError(
+        `Failed to load versions for ${selectedGame}: ${formatErrorMessage(error)}`
+      );
     } finally {
       loadingVersions = false;
     }
+  }
+
+  // Debounced search function
+  function handleSearchInput() {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+    }
+
+    if (!selectedGame || selectedGame.trim().length === 0) {
+      return;
+    }
+
+    searchDebounceTimer = window.setTimeout(() => {
+      loadCloudVersions();
+    }, 500);
   }
 
   async function handleDownload(versionId: string) {
@@ -746,6 +789,7 @@
                       type="text"
                       bind:value={selectedGame}
                       placeholder="Enter game ID..."
+                      on:input={handleSearchInput}
                       on:blur={loadCloudVersions}
                     />
                     <button
@@ -753,7 +797,7 @@
                       on:click={loadCloudVersions}
                       disabled={!selectedGame || loadingVersions}
                     >
-                      Search
+                      {loadingVersions ? "Searching..." : "Search"}
                     </button>
                   </div>
                 </div>
@@ -767,7 +811,7 @@
                         <div class="version-info">
                           <div class="version-header">
                             <strong
-                              >{version.version_id.substring(0, 8)}...</strong
+                              >{version.version_id.substring(0, 16)}...</strong
                             >
                             <span class="version-date"
                               >{formatDate(version.timestamp)}</span
@@ -777,14 +821,14 @@
                             <span>{formatBytes(version.size_bytes)}</span>
                             <span class="separator">•</span>
                             <span class="mono"
-                              >Hash: {version.sha256.substring(0, 10)}...</span
+                              >Hash: {version.sha256.substring(0, 16)}...</span
                             >
                           </div>
                           <div class="version-meta">
                             <span
                               >Device: {version.device_id.substring(
                                 0,
-                                8
+                                16
                               )}...</span
                             >
                             {#if version.device_id === deviceId}
@@ -803,12 +847,14 @@
                             {/if}
                           {/if}
                         </div>
-                        <button
-                          class="btn-secondary btn-small"
-                          on:click={() => handleDownload(version.version_id)}
-                        >
-                          Download
-                        </button>
+                        <div class="version-actions">
+                          <button
+                            class="btn-secondary btn-small"
+                            on:click={() => handleDownload(version.version_id)}
+                          >
+                            Download
+                          </button>
+                        </div>
                       </div>
                     {/each}
                   </div>
@@ -1306,23 +1352,42 @@
 
   .version-item {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
     background: var(--bg-secondary);
     border-radius: 8px;
     border: 1px solid var(--border);
   }
 
+  @media (min-width: 640px) {
+    .version-item {
+      flex-direction: row;
+      justify-content: space-between;
+      align-items: center;
+    }
+  }
+
   .version-info {
-    flex: 1;
+    flex: 1 1 70%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  @media (min-width: 640px) {
+    .version-info {
+      flex: 1 1 75%;
+    }
   }
 
   .version-header {
     display: flex;
+    flex-direction: row;
     align-items: baseline;
     gap: 12px;
-    margin-bottom: 4px;
+    flex-wrap: wrap;
   }
 
   .version-date {
@@ -1332,10 +1397,30 @@
 
   .version-meta {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     font-size: 0.85rem;
     color: var(--text-secondary);
+    margin-top: 4px;
+  }
+
+  .version-actions {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+  }
+
+  .version-actions button {
+    min-width: 120px;
+  }
+
+  @media (min-width: 640px) {
+    .version-actions {
+      justify-content: flex-end;
+      width: auto;
+    }
   }
 
   .separator {
