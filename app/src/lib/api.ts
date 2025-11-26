@@ -87,6 +87,10 @@ export function packageSave(
   });
 }
 
+export function listGamesFromHistory(): Promise<string[]> {
+  return invoke("list_games_from_history");
+}
+
 export function listProfiles(): Promise<EmulatorProfile[]> {
   return invoke("list_profiles");
 }

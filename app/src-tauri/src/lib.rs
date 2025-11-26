@@ -10,7 +10,7 @@ use api::cloud_api::{
     validate_self_host_settings,
 };
 use api::explorer_api::{check_path_status, open_folder, scan_save_files};
-use api::history_api::{delete_history_item, get_history_item, list_history, rollback_version};
+use api::history_api::{delete_history_item, get_history_item, list_games_from_history, list_history, rollback_version};
 use api::packager_api::{package_game, package_save, validate_paths};
 use api::profile_api::{delete_profile, get_profile, list_profiles, save_profile};
 use api::settings_api::{
@@ -186,6 +186,7 @@ pub fn run() {
             package_save,
             package_game,
             validate_paths,
+            list_games_from_history,
             list_history,
             get_history_item,
             rollback_version,

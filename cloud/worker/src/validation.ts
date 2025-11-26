@@ -11,7 +11,8 @@ export function validateDeviceId(deviceId: string | undefined): boolean {
 }
 
 export function validateGameId(gameId: string): boolean {
-  return /^[A-Za-z0-9_.-]{1,128}$/.test(gameId.trim());
+  // Allow alphanumeric, spaces, and common punctuation for game names
+  return /^[A-Za-z0-9 _.\-:()&'!]{1,128}$/.test(gameId.trim()) && gameId.trim().length > 0;
 }
 
 export function validateVersionId(versionId: string): boolean {

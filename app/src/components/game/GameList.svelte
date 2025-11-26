@@ -24,16 +24,10 @@
   }
 
   function openGame(id: string) {
-    // Extract game name from file path for portability
-    // id might be a full path like "/path/to/game.srm"
-    // We need just the basename without extension for cross-machine compatibility
-    const gameBasename = id.split(/[/\\]/).pop() || id;
-    const gameName = gameBasename.replace(/\.[^/.]+$/, ""); // Remove extension
-
-    console.log(
-      `[GameList] Opening game: original="${id}", extracted="${gameName}"`
-    );
-    goto(`/game/${encodeURIComponent(gameName)}`);
+    // id is now the metadata game_id (not a file path)
+    // Use it directly for navigation
+    console.log(`[GameList] Opening game: "${id}"`);
+    goto(`/game/${encodeURIComponent(id)}`);
   }
 </script>
 

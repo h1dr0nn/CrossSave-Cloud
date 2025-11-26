@@ -116,13 +116,22 @@
     loadingGames = true;
     try {
       const files = await scanSaveFiles(emulatorId);
-      const games: GameEntry[] = files.map((file) => ({
-        id: file.path, // Use path as ID
-        emulatorId: emulatorId,
-        name: extractGameName(file.name),
-        icon: getIconVariant(file.path),
-        lastModified: new Date(file.modified).toISOString(),
-      }));
+      const games: GameEntry[] = files.map((file) => {
+        const gameName = extractGameName(file.name);
+        // DEBUG: Show first game name
+        if (files.indexOf(file) === 0) {
+          console.log(
+            `[DEBUG] First game extracted: "${gameName}" from "${file.name}"`
+          );
+        }
+        return {
+          id: gameName, // Use extracted name as ID (consistent with UI)
+          emulatorId: emulatorId,
+          name: gameName,
+          icon: getIconVariant(file.path),
+          lastModified: new Date(file.modified).toISOString(),
+        };
+      });
 
       // Sort by modified desc
       games.sort(

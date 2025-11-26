@@ -1232,7 +1232,7 @@ pub async fn perform_download(
         .timestamp
         .unwrap_or_else(|| Utc::now().timestamp().max(0) as u64);
     let metadata = SaveMetadata {
-        game_id: download_info.game_id.clone(),
+        game_id: game_id.clone(),
         emulator_id: emulator_id.clone(),
         timestamp,
         version_id: download_info.version_id.clone(),

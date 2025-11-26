@@ -755,14 +755,6 @@ impl CloudBackend for HttpCloudBackend {
         let mut payload = payload;
         payload.device_id = Some(device_id);
         
-        // Sanitize game_id to match backend validation (no spaces allowed)
-        let original_game_id = payload.game_id.clone();
-        payload.game_id = sanitize_game_id(&payload.game_id);
-        debug!(
-            "{} request_upload_url: original_game_id={}, sanitized_game_id={}",
-            self.log_tag, original_game_id, payload.game_id
-        );
-        
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
@@ -800,14 +792,6 @@ impl CloudBackend for HttpCloudBackend {
         let device_id = self.ensure_device_registered().await?;
         let mut payload = payload;
         payload.device_id = Some(device_id);
-        
-        // Sanitize game_id to match backend validation
-        let original_game_id = payload.game_id.clone();
-        payload.game_id = sanitize_game_id(&payload.game_id);
-        debug!(
-            "{} notify_upload: original_game_id={}, sanitized_game_id={}",
-            self.log_tag, original_game_id, payload.game_id
-        );
 
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
@@ -846,19 +830,12 @@ impl CloudBackend for HttpCloudBackend {
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
-        // Sanitize game_id to match backend validation
-        let sanitized_game_id = sanitize_game_id(&game_id);
-        debug!(
-            "{} request_download_url: original_game_id={}, sanitized_game_id={}",
-            self.log_tag, game_id, sanitized_game_id
-        );
-
         let resp = self
             .apply_access_headers(
                 self.client
                     .post(format!("{}/save/download-url", base_url))
                     .header("Authorization", auth)
-                    .json(&serde_json::json!({ "game_id": sanitized_game_id, "version_id": version_id })),
+                    .json(&serde_json::json!({ "game_id": game_id, "version_id": version_id })),
             )
             .send()
             .await
@@ -888,14 +865,7 @@ impl CloudBackend for HttpCloudBackend {
         let base_url = self.validate_base_url()?;
         let auth = self.get_auth_header()?;
 
-        // Sanitize game_id to match backend validation
-        let sanitized_game_id = sanitize_game_id(&game_id);
-        debug!(
-            "{} list_versions: original_game_id={}, sanitized_game_id={}",
-            self.log_tag, game_id, sanitized_game_id
-        );
-
-        let payload = serde_json::json!({ "game_id": sanitized_game_id.clone() });
+        let payload = serde_json::json!({ "game_id": game_id.clone() });
 
         let resp = self
             .apply_access_headers(
