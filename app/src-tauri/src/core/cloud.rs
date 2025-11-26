@@ -206,6 +206,7 @@ pub trait CloudBackend: Send + Sync {
     ) -> Result<(), CloudError>;
     async fn remove_device(&self, token: String, device_id: String) -> Result<(), CloudError>;
     fn get_device_id(&self) -> Result<String, CloudError>;
+    async fn list_games(&self) -> Result<Vec<String>, CloudError>;
     
     /// Check if the cloud backend is reachable and healthy
     async fn check_connection(&self) -> Result<bool, CloudError>;
@@ -300,6 +301,10 @@ impl CloudBackend for DisabledCloudBackend {
     
     async fn check_connection(&self) -> Result<bool, CloudError> {
         Ok(false) // Disabled backend is never connected
+    }
+
+    async fn list_games(&self) -> Result<Vec<String>, CloudError> {
+        Err(CloudError::Disabled)
     }
 }
 
@@ -1196,6 +1201,56 @@ impl CloudBackend for HttpCloudBackend {
                 Ok(false)
             }
         }
+    }
+
+    async fn list_games(&self) -> Result<Vec<String>, CloudError> {
+        let base_url = self.validate_base_url()?;
+        let auth = self.get_auth_header()?;
+
+        let resp = self
+            .apply_access_headers(
+                self.client
+                    .post(format!("{}/save/games", base_url))
+                    .header("Authorization", auth),
+            )
+            .send()
+            .await
+            .map_err(|e| CloudError::NetworkError(e.to_string()))?;
+
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(CloudError::Unauthorized("invalid token".into()));
+        }
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            error!(
+                "{} list_games failed: status={}",
+                self.log_tag, status
+            );
+            return Err(CloudError::NetworkError(format!(
+                "list games failed: {}",
+                status
+            )));
+        }
+
+        #[derive(Deserialize)]
+        struct GamesResponse {
+            ok: bool,
+            games: Vec<String>,
+        }
+
+        let parsed: GamesResponse = resp
+            .json()
+            .await
+            .map_err(|e| CloudError::Serialization(e.to_string()))?;
+
+        info!(
+            "{} list_games count={}",
+            self.log_tag,
+            parsed.games.len()
+        );
+
+        Ok(parsed.games)
     }
 }
 
