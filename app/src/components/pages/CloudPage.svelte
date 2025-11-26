@@ -549,7 +549,7 @@
               <p class="section-title">Account</p>
             </div>
             <div class="settings-card">
-              <div class="setting-row">
+              <div class="setting-row account-row">
                 <div class="setting-info">
                   <div class="setting-icon cloud">
                     <svg viewBox="0 0 24 24" fill="none">
@@ -563,23 +563,35 @@
                     </svg>
                   </div>
                   <div class="setting-content">
-                    <p class="setting-label">Logged in as</p>
-                    <p class="setting-value">{$userEmail || "Cloud account"}</p>
+                    <div class="account-main-row">
+                      <div class="account-info-group">
+                        <p class="setting-label">Logged in as</p>
+                        <div class="setting-value-row">
+                          <p class="setting-value">
+                            {$userEmail || "Cloud account"}
+                          </p>
+                          <span
+                            class="status-dot"
+                            class:offline={onlineStatus === "offline"}
+                            aria-live="polite"
+                            title={onlineStatus === "online"
+                              ? "Online"
+                              : "Offline"}
+                          ></span>
+                        </div>
+                      </div>
+                      <button
+                        class="btn-secondary btn-small"
+                        on:click={handleLogout}
+                      >
+                        Logout
+                      </button>
+                    </div>
                     <p class="setting-meta">
                       Device ID: {deviceId || "Unknown"}
                     </p>
                   </div>
                 </div>
-                <span
-                  class:offline={onlineStatus === "offline"}
-                  class="status-pill"
-                  aria-live="polite"
-                >
-                  {onlineStatus === "online" ? "Online" : "Offline"}
-                </span>
-                <button class="btn-secondary btn-small" on:click={handleLogout}>
-                  Logout
-                </button>
               </div>
             </div>
           </div>
@@ -700,7 +712,7 @@
                             ).toLocaleString()}</span
                           >
                           <span class="device-meta mono"
-                            >ID: {device.device_id.substring(0, 10)}...</span
+                            >ID: {device.device_id.toLocaleString()}</span
                           >
                         </div>
                         <div class="device-actions">
@@ -816,7 +828,6 @@
   .settings-page {
     display: grid;
     grid-template-columns: 1fr;
-    min-height: 100vh;
     width: 100%;
     background: var(--bg);
     color: var(--text);
@@ -828,11 +839,9 @@
     max-width: 1360px;
     margin: 0 auto;
     width: 100%;
-    min-height: 100vh;
   }
 
   .content-body {
-    overflow-y: auto;
     overflow-x: hidden;
     scroll-behavior: smooth;
     padding: clamp(16px, 3vw, 32px);
@@ -1116,6 +1125,36 @@
     flex: 1;
   }
 
+  .setting-value-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .account-row .setting-info {
+    flex: 1;
+    max-width: 100%;
+  }
+
+  .account-main-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+
+  .account-info-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0px;
+    flex: 1;
+  }
+
+  .account-info-group .setting-value {
+    margin-top: 0;
+  }
+
   .setting-label {
     margin: 0;
     font-weight: 500;
@@ -1131,7 +1170,7 @@
   /* Sync Status */
   .status-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 12px;
     margin-bottom: 24px;
   }
@@ -1155,6 +1194,7 @@
     font-weight: 600;
     color: var(--text-primary);
     font-size: 1rem;
+    text-align: center;
   }
 
   .value.syncing {
@@ -1334,7 +1374,7 @@
     background: var(--surface-muted);
     color: var(--text-primary);
     font-size: 0.85rem;
-    margin-right: 12px;
+    white-space: nowrap;
   }
 
   .status-pill.offline {
@@ -1347,6 +1387,34 @@
     margin: 2px 0 0;
     color: var(--text-secondary);
     font-size: 0.85rem;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success, #10b981);
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px
+      color-mix(in srgb, var(--success, #10b981) 20%, transparent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .status-dot.offline {
+    background: var(--danger, #ef4444);
+    box-shadow: 0 0 0 2px
+      color-mix(in srgb, var(--danger, #ef4444) 20%, transparent);
+    animation: none;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.6;
+    }
   }
 
   .mono {
@@ -1452,6 +1520,22 @@
       padding: 16px;
     }
 
+    .status-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .device-info {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .device-id {
+      width: 100%;
+      text-align: center;
+      display: block;
+    }
+
     .device-item,
     .version-item {
       flex-direction: column;
@@ -1461,7 +1545,7 @@
 
     .device-actions {
       width: 100%;
-      justify-content: flex-end;
+      justify-content: center;
     }
   }
 </style>
