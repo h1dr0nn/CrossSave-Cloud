@@ -98,7 +98,7 @@
   }
 
   $: lastModified = $latestEntry
-    ? formatter.format($latestEntry.metadata.timestamp)
+    ? formatter.format($latestEntry.metadata.timestamp * 1000)
     : "—";
   $: matchedFiles = $latestEntry?.metadata.file_list.length ?? 0;
   $: latestHash = $latestEntry ? shortHash($latestEntry.metadata.hash) : "—";
@@ -148,11 +148,8 @@
   }
 
   function handlePackage() {
-    // Extract game name from file path
-    // gameId might be a full path like "/path/to/game.srm"
-    // We need just the basename without extension
-    const gameBasename = gameId.split(/[/\\]/).pop() || gameId;
-    const gameName = gameBasename.replace(/\.[^/.]+$/, ""); // Remove extension
+    // gameId is already the extracted name (from MainLayout)
+    const gameName = gameId;
 
     console.log(
       `[GameDetail] Packaging: gameId="${gameId}", extracted name="${gameName}"`
@@ -232,26 +229,31 @@
     <article class="info-card summary">
       <div class="summary-header">
         <p class="label">Latest version</p>
-        <span class="pill">{$latestEntry?.metadata.version_id ?? "—"}</span>
+        <span
+          class="pill version-pill"
+          title={$latestEntry?.metadata.version_id ?? ""}
+        >
+          {$latestEntry?.metadata.version_id ?? "—"}
+        </span>
       </div>
-      <dl>
-        <div>
+      <div class="version-details">
+        <div class="detail-item">
           <dt>Emulator</dt>
           <dd>{effectiveEmulatorId || "Not provided"}</dd>
         </div>
-        <div>
+        <div class="detail-item">
           <dt>Last updated</dt>
           <dd>{lastModified}</dd>
         </div>
-        <div>
+        <div class="detail-item">
           <dt>Files tracked</dt>
           <dd>{matchedFiles}</dd>
         </div>
-        <div>
+        <div class="detail-item">
           <dt>Hash</dt>
           <dd class="mono">{latestHash}</dd>
         </div>
-      </dl>
+      </div>
     </article>
     <RecentHistory
       {gameId}
@@ -614,8 +616,45 @@
     font-weight: 700;
   }
 
+  .version-pill {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+  }
+
   .summary {
-    min-height: 100%;
+    min-height: 320px;
+    max-height: 320px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .version-details {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-md);
+    padding: var(--space-md) 0;
+  }
+
+  @media (max-width: 600px) {
+    .version-details {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: center;
+    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    border-radius: 12px;
+    padding: var(--space-md);
+    background: color-mix(in srgb, var(--surface-muted) 40%, transparent);
   }
 
   .watcher-section {

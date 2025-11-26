@@ -90,189 +90,323 @@
 
 {#if open && primary}
   <div
-    class="backdrop"
+    class="modal-backdrop"
+    on:click={close}
+    on:keydown={handleKey}
     role="button"
     tabindex="0"
     aria-label="Close compare overlay"
-    on:click={close}
-    on:keydown={handleKey}
-    on:keypress={handleKey}
   >
     <div
-      class="drawer"
+      class="modal-content"
+      on:click|stopPropagation
+      on:keydown|stopPropagation
       role="dialog"
       aria-modal="true"
       tabindex="-1"
-      on:click|stopPropagation
-      on:keydown|stopPropagation
     >
-      <header>
-        <div>
-          <p class="eyebrow">Compare Versions</p>
-          <h2>
-            {primary.metadata.version_id} vs {secondary?.metadata.version_id ??
-              "—"}
-          </h2>
-        </div>
-        <button class="close" on:click={close} aria-label="Close compare"
-          >×</button
-        >
+      <header class="modal-header">
+        <h3>Compare Versions</h3>
+        <button class="close-btn" on:click={close} aria-label="Close">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
       </header>
 
-      <div class="grid">
-        <div class="metric">
-          <p class="label">Hash</p>
-          <div class="compare">
-            <span
-              class={diffClass(primary.metadata.hash, secondary?.metadata.hash)}
-            >
-              {shortHash(primary.metadata.hash)}
-            </span>
-            <span class="divider">→</span>
-            <span
-              class={diffClass(
-                secondary?.metadata.hash ?? "",
-                primary.metadata.hash
-              )}
-            >
-              {shortHash(secondary?.metadata.hash)}
-            </span>
+      <div class="modal-body">
+        <div class="version-comparison">
+          <span class="pill version-id" title={primary.metadata.version_id}>
+            {primary.metadata.version_id}
+          </span>
+          <span class="vs">vs</span>
+          <span
+            class="pill version-id"
+            title={secondary?.metadata.version_id ?? "—"}
+          >
+            {secondary?.metadata.version_id ?? "—"}
+          </span>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <p class="metric-label">Hash</p>
+            <div class="metric-values">
+              <span
+                class={diffClass(
+                  primary.metadata.hash,
+                  secondary?.metadata.hash
+                )}
+              >
+                {shortHash(primary.metadata.hash)}
+              </span>
+              <span class="arrow">→</span>
+              <span
+                class={diffClass(
+                  secondary?.metadata.hash ?? "",
+                  primary.metadata.hash
+                )}
+              >
+                {shortHash(secondary?.metadata.hash)}
+              </span>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <p class="metric-label">File count</p>
+            <div class="metric-values">
+              <span class={diffClass(fileCount(primary), fileCount(secondary))}>
+                {fileCount(primary)}
+              </span>
+              <span class="arrow">→</span>
+              <span class={diffClass(fileCount(secondary), fileCount(primary))}>
+                {fileCount(secondary)}
+              </span>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <p class="metric-label">Total size</p>
+            <div class="metric-values">
+              <span class={diffClass(sizeValue(primary), sizeValue(secondary))}>
+                {totalSize(primary)}
+              </span>
+              <span class="arrow">→</span>
+              <span class={diffClass(sizeValue(secondary), sizeValue(primary))}>
+                {totalSize(secondary)}
+              </span>
+            </div>
           </div>
         </div>
 
-        <div class="metric">
-          <p class="label">File count</p>
-          <div class="compare">
-            <span class={diffClass(fileCount(primary), fileCount(secondary))}
-              >{fileCount(primary)}</span
-            >
-            <span class="divider">→</span>
-            <span class={diffClass(fileCount(secondary), fileCount(primary))}
-              >{fileCount(secondary)}</span
-            >
-          </div>
-        </div>
-
-        <div class="metric">
-          <p class="label">Total size</p>
-          <div class="compare">
-            <span class={diffClass(sizeValue(primary), sizeValue(secondary))}
-              >{totalSize(primary)}</span
-            >
-            <span class="divider">→</span>
-            <span class={diffClass(sizeValue(secondary), sizeValue(primary))}
-              >{totalSize(secondary)}</span
-            >
-          </div>
-        </div>
+        <p class="note">
+          Comparing the two most recent versions near your selection.
+        </p>
       </div>
-
-      <p class="note">
-        Comparing the two most recent versions near your selection.
-      </p>
     </div>
   </div>
 {/if}
+```
 
 <style>
-  .backdrop {
+  .modal-backdrop {
     position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.3);
-    display: grid;
-    place-items: center;
-    padding: 12px;
-    z-index: 20;
-    border: none;
-    cursor: pointer;
-  }
-
-  .drawer {
-    width: min(620px, 100%);
-    background: color-mix(in srgb, var(--surface) 95%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-    border-radius: 18px;
-    padding: 16px 18px;
-    padding-bottom: max(16px, env(safe-area-inset-bottom));
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
-  }
-
-  header {
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 16px;
+  }
+
+  .modal-content {
+    background: rgb(var(--surface-rgb));
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    width: 100%;
+    max-width: 720px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow-lg);
+    animation: slideUp 0.2s ease-out;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
     justify-content: space-between;
-    gap: 10px;
+    align-items: center;
+    border-radius: var(--radius) var(--radius) 0 0;
+    background: rgb(var(--surface-rgb));
   }
 
-  h2 {
-    margin: 4px 0 0;
-    font-size: 1.2rem;
+  .modal-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
   }
 
-  .eyebrow {
+  .close-btn {
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+
+  .close-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    background: rgb(var(--surface-rgb));
+    flex: 1 1 auto;
+    min-height: 0;
+    border-radius: 0 0 var(--radius) var(--radius);
+  }
+
+  .version-comparison {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 12px;
+    background: color-mix(in srgb, var(--surface-muted) 50%, transparent);
+    border-radius: var(--radius);
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent-muted) 60%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+
+  .version-id {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: "SFMono-Regular", ui-monospace, monospace;
+  }
+
+  .vs {
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 0.9rem;
+  }
+
+  @media (max-width: 600px) {
+    .version-comparison {
+      flex-direction: column;
+    }
+  }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  @media (max-width: 720px) {
+    .metrics-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .metric-card {
+    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    border-radius: 12px;
+    padding: 14px;
+    background: color-mix(in srgb, var(--surface-muted) 40%, transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 160px;
+  }
+
+  .metric-label {
     margin: 0;
     color: var(--muted);
-    letter-spacing: 0.08em;
+    font-size: 0.85rem;
+    font-weight: 500;
     text-transform: uppercase;
-    font-size: 0.8rem;
+    letter-spacing: 0.05em;
   }
 
-  .close {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    cursor: pointer;
-    font-size: 1.2rem;
-  }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 12px;
-    margin: 14px 0;
-  }
-
-  .metric {
-    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-    border-radius: 14px;
-    padding: 12px;
-    background: color-mix(in srgb, var(--surface-muted) 60%, var(--surface));
-  }
-
-  .label {
-    margin: 0 0 6px;
-    color: var(--muted);
-  }
-
-  .compare {
+  .metric-values {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco,
-      Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: "SFMono-Regular", ui-monospace, monospace;
+    font-size: 0.95rem;
+    justify-content: center;
   }
 
-  .divider {
+  .arrow {
     color: var(--muted);
+    font-size: 1rem;
   }
 
   .positive {
     color: #16a34a;
+    font-weight: 600;
   }
 
   .negative {
     color: #dc2626;
+    font-weight: 600;
   }
 
   .neutral {
     color: var(--text);
+    font-weight: 600;
   }
 
   .note {
     margin: 0;
     color: var(--muted);
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 12px;
+    background: color-mix(in srgb, var(--surface-muted) 30%, transparent);
+    border-radius: var(--radius-sm);
+  }
+
+  @media (max-width: 600px) {
+    .modal-content {
+      max-width: 100%;
+      max-height: 95vh;
+      border-radius: var(--radius-sm);
+    }
+
+    .modal-header,
+    .modal-body {
+      padding: 16px;
+    }
   }
 </style>

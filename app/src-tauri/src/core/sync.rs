@@ -303,11 +303,16 @@ impl UploadQueue {
             if let Ok(jobs) = serde_json::from_str::<Vec<UploadJob>>(&content) {
                 let mut q = self.queue.lock().await;
                 q.clear();
+                let mut added = false;
                 for mut job in jobs {
                     if job.status == UploadStatus::Uploading {
                         job.status = UploadStatus::Pending;
                     }
                     q.push_back(job);
+                    added = true;
+                }
+                if added {
+                    self.notify.notify_one();
                 }
             }
         }
@@ -1227,7 +1232,7 @@ pub async fn perform_download(
         .timestamp
         .unwrap_or_else(|| Utc::now().timestamp().max(0) as u64);
     let metadata = SaveMetadata {
-        game_id: download_info.game_id.clone(),
+        game_id: game_id.clone(),
         emulator_id: emulator_id.clone(),
         timestamp,
         version_id: download_info.version_id.clone(),

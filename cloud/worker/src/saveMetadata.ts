@@ -67,12 +67,7 @@ export async function generatePresignedPut(
     method: "PUT",
     key: objectKey,
     expires: expiresSeconds,
-    headers: {
-      "Content-Length": sizeBytes.toString(),
-      "Content-Type": "application/zip",
-    },
-    contentType: "application/zip",
-  } as any);
+  });
 
   return { url: presigned.url.toString(), key: objectKey };
 }

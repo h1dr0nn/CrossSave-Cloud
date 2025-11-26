@@ -326,37 +326,67 @@ async function handleUploadUrl(
   const deviceId = payload.device_id || auth.device_id;
 
   try {
-    const signed = await generatePresignedPut(
-      env.CROSSSAVE_R2,
-      auth.user_id,
-      payload.game_id,
-      payload.version_id,
-      payload.size_bytes,
-      PRESIGN_TTL_SECONDS
-    );
+    // PROXY UPLOAD STRATEGY:
+    // Native R2 bindings do not support createPresignedUrl.
+    // We proxy the upload through the worker using the R2 binding directly.
+
+    const objectKey = getSaveObjectKey(auth.user_id, payload.game_id, payload.version_id);
 
     const now = Math.floor(Date.now() / 1000);
     const workerToken = await signWorkerToken(
       {
         user_id: auth.user_id,
         device_id: deviceId,
-        r2_key: signed.key,
+        r2_key: objectKey,
         version_id: payload.version_id,
         exp: now + WORKER_TOKEN_TTL_SECONDS,
       },
       env
     );
 
+    // Construct proxy URL pointing to this worker
+    const uploadUrl = new URL("/save/upload-content", request.url);
+    uploadUrl.searchParams.set("token", workerToken);
+
     return jsonResponse({
       ok: true,
-      upload_url: signed.url,
-      r2_key: signed.key,
+      upload_url: uploadUrl.toString(),
+      r2_key: objectKey,
       version_id: payload.version_id,
       worker_token: workerToken,
     });
   } catch (error) {
-    console.error("[worker] failed to generate presigned url", error);
+    console.error("[worker] failed to generate upload url", error);
     return errorResponse(500, "presign_failed");
+  }
+}
+
+async function handleUploadContent(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+  if (!token) {
+    return errorResponse(401, "missing_token");
+  }
+
+  const payload = await verifyWorkerToken(token, env);
+  if (!payload) {
+    return errorResponse(403, "invalid_token");
+  }
+
+  try {
+    if (!request.body) {
+      return errorResponse(400, "missing_body");
+    }
+
+    await env.CROSSSAVE_R2.put(payload.r2_key, request.body, {
+      httpMetadata: {
+        contentType: "application/zip",
+      }
+    });
+    return jsonResponse({ ok: true });
+  } catch (error) {
+    console.error("[worker] upload proxy failed", error);
+    return errorResponse(500, "upload_failed");
   }
 }
 
@@ -688,6 +718,10 @@ export default {
         return errorResponse(401, "unauthorized");
       }
       return handleNotifyUpload(request, env, auth);
+    }
+
+    if (path === "/save/upload-content" && request.method === "PUT") {
+      return handleUploadContent(request, env);
     }
 
     if (path === "/save/download-url" && request.method === "POST") {

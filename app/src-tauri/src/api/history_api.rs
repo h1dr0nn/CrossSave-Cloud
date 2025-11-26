@@ -13,6 +13,13 @@ fn sanitize_input(value: String, field: &str) -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+pub async fn list_games_from_history(
+    state: tauri::State<'_, HistoryManager>,
+) -> Result<Vec<String>, String> {
+    Ok(state.get_games())
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub async fn list_history(
     state: tauri::State<'_, Arc<HistoryManager>>,

@@ -26,7 +26,7 @@
   let workingId: string | null = null;
 
   function formatTimestamp(timestamp: number) {
-    return formatter.format(timestamp);
+    return formatter.format(timestamp * 1000);
   }
 
   function shortHash(hash: string) {
@@ -91,23 +91,22 @@
   {:else}
     <ul class="history-list">
       {#each history.slice(0, 10) as entry}
-        <li>
-          <button
-            class="history-row"
+        <li class="history-item">
+          <div
+            class="item-header"
             on:click={() => dispatch("select", entry)}
+            on:keypress={() => dispatch("select", entry)}
+            role="button"
+            tabindex="0"
           >
-            <div class="meta">
-              <p class="version">Version {entry.metadata.version_id}</p>
-              <p class="timestamp">
-                {formatTimestamp(entry.metadata.timestamp)}
-              </p>
-            </div>
-            <div class="stats">
-              <span>{entry.metadata.file_list.length} files</span>
-              <span>{estimateSize(entry)}</span>
-              <span class="hash">{shortHash(entry.metadata.hash)}</span>
-            </div>
-          </button>
+            <p class="version" title={entry.metadata.version_id}>
+              Version {entry.metadata.version_id}
+            </p>
+            <p class="timestamp">
+              {formatTimestamp(entry.metadata.timestamp)}
+            </p>
+          </div>
+          <div class="divider"></div>
           <div class="actions">
             <button
               class="ghost"
@@ -137,7 +136,8 @@
     border-radius: var(--radius);
     padding: 14px 16px;
     box-shadow: var(--shadow-soft);
-    min-height: 0;
+    min-height: 320px;
+    max-height: 320px;
   }
 
   header {
@@ -172,57 +172,70 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    max-height: 230px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
   }
 
-  li {
+  /* Scrollbar styling */
+  .history-list::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .history-list::-webkit-scrollbar-track {
+    background: color-mix(in srgb, var(--border) 30%, transparent);
+    border-radius: 4px;
+  }
+
+  .history-list::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--border) 80%, transparent);
+    border-radius: 4px;
+  }
+
+  .history-list::-webkit-scrollbar-thumb:hover {
+    background: var(--border);
+  }
+
+  .history-item {
     border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
     border-radius: 14px;
     background: color-mix(in srgb, var(--surface-muted) 70%, var(--surface));
-    overflow: hidden;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-
-  .history-row {
-    width: 100%;
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 10px;
-    padding: 12px 14px;
-    border: none;
-    background: transparent;
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .history-row:hover {
-    background: color-mix(in srgb, var(--accent-muted) 25%, transparent);
-  }
-
-  .meta {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .item-header {
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border-radius: 14px 14px 0 0;
+  }
+
+  .item-header:hover {
+    background: color-mix(in srgb, var(--accent-muted) 20%, transparent);
   }
 
   .version {
-    margin: 0;
+    margin: 0 0 4px 0;
     font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .timestamp {
     margin: 0;
     color: var(--muted);
+    font-size: 0.85rem;
   }
 
-  .stats {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    color: var(--muted);
-    font-size: 0.95rem;
+  .divider {
+    height: 1px;
+    background: color-mix(in srgb, var(--border) 50%, transparent);
+    margin: 0;
   }
 
   .hash {
@@ -238,7 +251,8 @@
   .actions {
     display: flex;
     gap: 8px;
-    padding: 0 12px 12px;
+    padding: 10px 12px;
+    justify-content: center;
   }
 
   .ghost,
@@ -259,15 +273,5 @@
   .danger {
     border-color: color-mix(in srgb, #ef4444 40%, var(--border));
     color: #b91c1c;
-  }
-
-  @media (max-width: 720px) {
-    .history-row {
-      grid-template-columns: 1fr;
-    }
-
-    .stats {
-      justify-content: flex-start;
-    }
   }
 </style>

@@ -11,16 +11,8 @@ export function extractGameName(path: string): string {
   if (!path) return "Unknown Game";
   // Extract filename from path
   const filename = path.split(/[/\\]/).pop() || path;
-  // Remove extension
-  const name = filename.replace(/\.[^/.]+$/, "");
-  // Clean up underscores and dashes
-  const clean = name.replace(/[_-]+/g, " ").trim();
-
-  // Capitalize first letter of each word
-  return clean
-    .split(" ")
-    .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
-    .join(" ");
+  // Remove extension and return raw name
+  return filename.replace(/\.[^/.]+$/, "");
 }
 
 export function deriveEmulatorId(gameId: string): string {
