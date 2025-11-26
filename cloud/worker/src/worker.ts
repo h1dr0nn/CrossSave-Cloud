@@ -562,8 +562,10 @@ async function handleListSaves(
   }
 
   const gameId = typeof body.game_id === "string" ? body.game_id.trim() : "";
-  if (!validateGameId(gameId)) {
-    return errorResponse(400, "invalid_request");
+
+  // Allow partial search with minimum 3 characters
+  if (gameId.length < 3) {
+    return errorResponse(400, "game_id_too_short");
   }
 
   const metadataKey = getUserMetadataKey(auth.user_id);
@@ -580,10 +582,13 @@ async function handleListSaves(
     return errorResponse(500, "metadata_corrupted");
   }
 
+  // Filter versions by partial game ID match (case-insensitive)
+  const searchLower = gameId.toLowerCase();
   const versions = metadata.versions
-    .filter((entry) => entry.game_id === gameId)
+    .filter((entry) => entry.game_id && entry.game_id.toLowerCase().includes(searchLower))
     .map((entry) => ({
       version_id: entry.version_id,
+      game_id: entry.game_id,
       size_bytes: entry.size_bytes,
       timestamp: entry.timestamp,
       device_id: entry.device_id,
@@ -593,6 +598,36 @@ async function handleListSaves(
     .sort((a, b) => b.timestamp - a.timestamp);
 
   return jsonResponse({ ok: true, game_id: gameId, versions });
+}
+
+async function handleListGames(
+  env: Env,
+  auth: AuthContext
+): Promise<Response> {
+  const metadataKey = getUserMetadataKey(auth.user_id);
+  const head = await env.CROSSSAVE_R2.head(metadataKey);
+  if (!head) {
+    return jsonResponse({ ok: true, games: [] });
+  }
+
+  let metadata: UserSaveMetadata;
+  try {
+    metadata = await loadUserMetadata(env.CROSSSAVE_R2, auth.user_id);
+  } catch (error) {
+    console.error("[worker] failed to parse metadata", error);
+    return errorResponse(500, "metadata_corrupted");
+  }
+
+  // Extract unique game IDs from all versions
+  const gameIds = new Set<string>();
+  for (const entry of metadata.versions) {
+    if (entry.game_id) {
+      gameIds.add(entry.game_id);
+    }
+  }
+
+  const games = Array.from(gameIds).sort();
+  return jsonResponse({ ok: true, games });
 }
 
 async function handleRegisterDevice(request: Request, env: Env, auth: AuthContext): Promise<Response> {
@@ -754,6 +789,14 @@ export default {
         return errorResponse(401, "unauthorized");
       }
       return handleRemoveDevice(request, env, auth);
+    }
+
+    if (path === "/save/games" && request.method === "POST") {
+      const auth = await requireAuth(env, request);
+      if (!auth) {
+        return errorResponse(401, "unauthorized");
+      }
+      return handleListGames(env, auth);
     }
 
     return errorResponse(404, "Not implemented");

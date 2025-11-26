@@ -3,7 +3,8 @@ mod core;
 
 use api::cloud_api::{
     download_cloud_save, download_cloud_version, get_cloud_config, get_cloud_status,
-    get_conflict_details, get_upload_url, list_cloud_devices, list_cloud_versions, login_cloud,
+    get_conflict_details, get_upload_url, list_all_cloud_games, list_cloud_devices,
+    list_cloud_versions, login_cloud,
     logout_cloud, notify_upload, reconnect_cloud, register_cloud_device, remove_cloud_device,
     resolve_conflict_download, resolve_conflict_upload, signup_cloud, update_cloud_config,
     update_cloud_mode, upload_cloud_save, validate_official_cloud_settings,
@@ -199,6 +200,7 @@ pub fn run() {
             check_path_status,
             open_folder,
             upload_cloud_save,
+            list_all_cloud_games,
             list_cloud_versions,
             download_cloud_save,
             download_cloud_version,

@@ -142,6 +142,9 @@ const cloudMode = writable<CloudMode>('off');
 const cloudConfig = writable<CloudConfig | null>(null);
 const validationResult = writable<CloudValidationResult>({ status: 'idle', message: '' });
 
+// Game ID cache - now fetched from API instead of localStorage
+const gameIdCache = writable<string[]>([]);
+
 const listeners: Promise<UnlistenFn>[] = [];
 
 function bindEvents() {
@@ -297,6 +300,7 @@ export const cloudStore = {
     cloudMode: { subscribe: cloudMode.subscribe },
     cloudConfig: { subscribe: cloudConfig.subscribe },
     validation: { subscribe: validationResult.subscribe },
+    gameIdCache: { subscribe: gameIdCache.subscribe },
 
     async initialize(): Promise<void> {
         bindEvents();
@@ -467,6 +471,21 @@ export const cloudStore = {
         });
 
         return normalized;
+    },
+
+    async fetchAllGames(): Promise<string[]> {
+        bindEvents();
+        try {
+            console.log('[cloudStore] Fetching all games from API...');
+            const games = await invoke<string[]>('list_all_cloud_games');
+            console.log('[cloudStore] Received games:', games);
+            gameIdCache.set(games);
+            return games;
+        } catch (error) {
+            console.error('[cloudStore] Failed to fetch game list:', error);
+            gameIdCache.set([]);
+            return [];
+        }
     },
 
     async downloadCloudVersion(gameId: string, versionId: string): Promise<string> {

@@ -484,6 +484,26 @@ pub async fn list_cloud_versions(
 }
 
 #[tauri::command]
+pub async fn list_all_cloud_games(
+    cloud: State<'_, Arc<Mutex<Box<dyn CloudBackend + Send>>>>,
+    settings: State<'_, Arc<SettingsManager>>,
+) -> Result<Vec<String>, String> {
+    let settings_snapshot = settings
+        .get_settings()
+        .map_err(|e| format!("Failed to load settings: {e}"))?;
+
+    if settings_snapshot.cloud_mode == CloudMode::Off {
+        return Err("cloud_not_configured".into());
+    }
+
+    let backend = cloud.lock().await;
+    backend
+        .list_games()
+        .await
+        .map_err(|e| cloud_error_to_string(e))
+}
+
+#[tauri::command]
 pub async fn download_cloud_save(
     game_id: String,
     version_id: String,

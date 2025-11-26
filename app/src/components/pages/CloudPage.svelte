@@ -42,6 +42,7 @@
   const downloadStateStore = cloudStore.downloadState;
   const onlineStatusStore = cloudStore.onlineStatus;
   const devicesStore = cloudStore.devices;
+  const gameIdCacheStore = cloudStore.gameIdCache;
 
   let syncStatus: SyncStatus | null = null;
   let selectedVersions: CloudVersion[] = [];
@@ -368,13 +369,13 @@
     }
   }
 
-  // Debounced search function
+  // Debounced search function (minimum 3 characters)
   function handleSearchInput() {
     if (searchDebounceTimer) {
       clearTimeout(searchDebounceTimer);
     }
 
-    if (!selectedGame || selectedGame.trim().length === 0) {
+    if (!selectedGame || selectedGame.trim().length < 3) {
       return;
     }
 
@@ -788,9 +789,9 @@
                       id="game-select"
                       type="text"
                       bind:value={selectedGame}
-                      placeholder="Enter game ID..."
+                      placeholder="Enter at least 3 characters..."
                       on:input={handleSearchInput}
-                      on:blur={loadCloudVersions}
+                      autocomplete="off"
                     />
                     <button
                       class="btn-secondary"
@@ -1632,5 +1633,46 @@
       width: 100%;
       justify-content: center;
     }
+  }
+  .search-wrapper {
+    position: relative;
+    flex: 1;
+  }
+
+  .search-wrapper input {
+    width: 100%;
+  }
+
+  .suggestions-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 4px;
+    z-index: 10;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  .suggestion-item {
+    width: 100%;
+    padding: 8px 12px;
+    text-align: left;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-family: monospace;
+    color: var(--text-primary);
+    transition: background-color 0.2s;
+  }
+
+  .suggestion-item:hover,
+  .suggestion-item.selected {
+    background: var(--primary-alpha, rgba(79, 70, 229, 0.1));
+    color: var(--primary, #4f46e5);
   }
 </style>
