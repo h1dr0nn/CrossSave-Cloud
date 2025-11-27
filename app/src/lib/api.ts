@@ -100,7 +100,7 @@ export function saveProfile(profile: EmulatorProfile): Promise<EmulatorProfile> 
 }
 
 export function deleteProfile(emulatorId: string): Promise<void> {
-  return invoke("delete_profile", { emulator_id: emulatorId });
+  return invoke("delete_profile", { emulatorId });
 }
 
 export function validatePaths(paths: string[]): Promise<string[]> {
