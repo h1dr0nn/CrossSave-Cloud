@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600&display=swap');
+
+:root {
+  --background: #F2F2F7;
+  --surface: rgba(255, 255, 255, 0.7);
+  --foreground: #1C1C1E;
+  --muted: #6B7280;
+  --border: rgba(0, 0, 0, 0.06);
+  --accent: #007AFF;
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --background: #1C1C1E;
+  --surface: rgba(44, 44, 46, 0.7);
+  --foreground: #F5F5F7;
+  --muted: #8E8E93;
+  --border: rgba(255, 255, 255, 0.06);
+  --accent: #007AFF;
+  color-scheme: dark;
+}
+
+* {
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+body {
+  margin: 0;
+  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  background: radial-gradient(circle at 20% 20%, rgba(0, 122, 255, 0.08), transparent 25%),
+    radial-gradient(circle at 80% 0%, rgba(52, 199, 89, 0.08), transparent 20%),
+    radial-gradient(circle at 50% 80%, rgba(255, 159, 10, 0.06), transparent 30%),
+    var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+}
+
+.glass-panel {
+  background: var(--surface);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.surface-frosted {
+  background: var(--surface);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+}
+
+.selection-ring {
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3);
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-soft px-3 py-2 text-sm font-medium shadow-inner-glow transition duration-fast;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-foreground hover:bg-white/40 hover:shadow-soft-glow dark:hover:bg-white/10;
+  }
+
+  .btn-accent {
+    @apply btn bg-accent/90 text-white hover:bg-accent shadow-soft-glow;
+  }
+
+  .panel {
+    @apply glass-panel p-4 shadow-soft-glow backdrop-blur-glass;
+  }
+}
