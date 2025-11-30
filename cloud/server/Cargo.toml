@@ -43,6 +43,9 @@ dotenvy = "0.15"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+# tower_governor = "0.4.2" # Compatible with Axum 0.7
+tower_governor = "0.4.2"
+governor = "0.6.3"
 
 [dev-dependencies]
 # Testing
