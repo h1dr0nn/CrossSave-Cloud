@@ -20,12 +20,19 @@ jsonwebtoken = "9.3"
 bcrypt = "0.15"
 
 # S3 Client
-aws-config = "1.1"
-aws-sdk-s3 = "1.14"
+
+# AWS / S3
+aws-config = { version = "=1.1.7", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "=1.17.0"
+# Pin transitive dependencies to avoid Rust 1.88 requirement
+aws-sdk-sts = "=1.17.0"
+aws-sdk-sso = "=1.17.0"
+aws-sdk-ssooidc = "=1.17.0"
 aws-credential-types = { version = "1.1", features = ["hardcoded-credentials"] }
 
 # Utilities
 uuid = { version = "1.0", features = ["v4", "serde"] }
+base64ct = "=1.6.0" # Pin to avoid 1.8.0 edition2024 issue
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1.0"
