@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # MinIO S3-compatible storage
+  minio:
+    image: minio/minio:latest
+    container_name: crosssave-minio
+    ports:
+      - "9373:9000"  # S3 API (unique port)
+      - "9374:9001"  # Web Console (unique port)
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - crosssave-network
+
+  # CrossSave Self-host Server
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crosssave-server
+    ports:
+      - "7373:7373"  # Unique server port
+    environment:
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 7373
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: crosssave
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_REGION: us-east-1
+      RUST_LOG: info,crosssave_selfhost_server=debug
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - crosssave-network
+    restart: unless-stopped
+
+  # Optional: Nginx reverse proxy
+  # Uncomment to enable SSL termination and reverse proxy
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: crosssave-nginx
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - server
+  #   networks:
+  #     - crosssave-network
+
+volumes:
+  minio_data:
+    driver: local
+
+networks:
+  crosssave-network:
+    driver: bridge
