@@ -18,7 +18,7 @@ pub fn validate_device_id(device_id: &Option<String>) -> bool {
 
 /// Validate game ID
 pub fn validate_game_id(game_id: &str) -> bool {
-    !game_id.is_empty() && game_id.len() <= 256
+    game_id.len() >= 3 && game_id.len() <= 256
 }
 
 /// Validate version ID
