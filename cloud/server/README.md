@@ -65,7 +65,7 @@ curl http://localhost:7373/health
 | `SERVER_HOST`   | Bind address    | `0.0.0.0`           |
 | `SERVER_PORT`   | Server port     | `7373`              |
 | `JWT_SECRET`    | JWT signing key | **REQUIRED**        |
-| `S3_ENDPOINT`   | S3 endpoint URL | `http://minio:9373` |
+| `S3_ENDPOINT`   | S3 endpoint URL | `http://minio:9000` |
 | `S3_BUCKET`     | S3 bucket name  | `crosssave`         |
 | `S3_ACCESS_KEY` | S3 access key   | `minioadmin`        |
 | `S3_SECRET_KEY` | S3 secret key   | `minioadmin`        |
