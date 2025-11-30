@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { notifications, dismissNotification, type NotificationEntry } from "../lib/notifications";
+  import {
+    notifications,
+    dismissNotification,
+    type NotificationEntry,
+  } from "../lib/notifications";
 
   let entries: NotificationEntry[] = [];
   const unsubscribe = notifications.subscribe((value) => {
@@ -19,10 +23,14 @@
       {#each entries as entry}
         <li class={entry.level}>
           <div>
-            <span class="badge">{entry.level === "error" ? "Error" : "Info"}</span>
+            <span class="badge"
+              >{entry.level === "error" ? "Error" : "Info"}</span
+            >
             <span class="message">{entry.message}</span>
           </div>
-          <button class="dismiss" on:click={() => dismissNotification(entry.id)}>×</button>
+          <button class="dismiss" on:click={() => dismissNotification(entry.id)}
+            >×</button
+          >
         </li>
       {/each}
     </ul>
