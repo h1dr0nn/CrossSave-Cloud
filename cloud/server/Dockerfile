@@ -1,5 +1,5 @@
 # Multi-stage build for minimal image size
-FROM rust:1.75-slim as builder
+FROM rust:1.83-slim-bookworm as builder
 
 WORKDIR /app
 
@@ -10,11 +10,12 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy manifests
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 
 # Create dummy main.rs to cache dependencies
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
+    cargo generate-lockfile && \
     cargo build --release && \
     rm -rf src
 

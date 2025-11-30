@@ -1,16 +1,7 @@
-mod auth;
-mod config;
-mod routes;
-mod storage;
-mod types;
-mod validation;
-
-use axum::Router;
-use std::net::SocketAddr;
-use tower_http::{
-    cors::{Any, CorsLayer},
-    trace::TraceLayer,
+use crosssave_selfhost_server::{
+    auth, config, routes, storage, create_app
 };
+use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -52,14 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("S3 bucket '{}' ready", config.s3_bucket);
 
     // Create router with CORS and tracing
-    let app = routes::create_router(s3_client)
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
-        .layer(TraceLayer::new_for_http());
+    let app = create_app(s3_client);
 
     // Bind and serve
     let addr: SocketAddr = config.bind_address().parse()?;
