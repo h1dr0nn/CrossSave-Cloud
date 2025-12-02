@@ -32,8 +32,20 @@ pub async fn create_router() -> Router {
     Router::new()
 }
 
+use std::sync::Arc;
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
+
 // Better approach: Expose a function that sets up the app with a given client
 pub fn create_app(client: storage::S3Client) -> Router {
+    // Rate limit configuration: 5 requests per second, burst 10
+    let governor_conf = Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(5)
+            .burst_size(10)
+            .finish()
+            .unwrap(),
+    );
+
     routes::create_router(client)
         .layer(
             CorsLayer::new()
@@ -42,6 +54,9 @@ pub fn create_app(client: storage::S3Client) -> Router {
                 .allow_headers(Any),
         )
         .layer(TraceLayer::new_for_http())
+        .layer(GovernorLayer {
+            config: governor_conf,
+        })
 }
 
 // Helper for integration tests

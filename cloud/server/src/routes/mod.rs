@@ -1,37 +1,29 @@
 pub mod auth;
 pub mod device;
+pub mod health;
 pub mod save;
 
+use crate::storage::S3Client;
 use axum::{
     routing::{get, post},
-    Json, Router,
+    Router,
 };
-use serde_json::{json, Value};
-use crate::storage::S3Client;
-
-/// Health check endpoint
-pub async fn health() -> Json<Value> {
-    Json(json!({
-        "ok": true,
-        "status": "healthy"
-    }))
-}
 
 /// Create router with all routes
-pub fn create_router(s3_client: S3Client) -> Router {
+pub fn create_router(client: S3Client) -> Router {
+    // Initialize health check start time
+    health::init_health_check();
+
     Router::new()
         // Health check
-        .route("/health", get(health))
-        
+        .route("/health", get(health::handle_health_check))
         // Auth routes (no authentication required)
         .route("/signup", post(auth::handle_signup))
         .route("/login", post(auth::handle_login))
-        
         // Device routes (authentication required)
         .route("/device/register", post(device::handle_register_device))
         .route("/device/list", get(device::handle_list_devices))
         .route("/device/remove", post(device::handle_remove_device))
-        
         // Save routes (authentication required)
         .route("/save/upload-url", post(save::handle_upload_url))
         .route("/save/upload-content", post(save::handle_upload_content))
@@ -39,7 +31,6 @@ pub fn create_router(s3_client: S3Client) -> Router {
         .route("/save/download-url", post(save::handle_download_url))
         .route("/save/list", post(save::handle_list_saves))
         .route("/save/games", post(save::handle_list_games))
-        
         // Add S3 client to state
-        .with_state(s3_client)
+        .with_state(client)
 }
